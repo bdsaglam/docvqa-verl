@@ -223,14 +223,21 @@ verl tokenizes new turns as a *diff* — `apply_chat_template` runs only
 on new messages with `remove_system_prompt=True`, then the resulting
 ids are concatenated to the existing `response_ids`. Prior assistant
 tokens (including their `<think>` content) stay as raw token ids and
-are never re-rendered. This naturally preserves thinking across turns.
+are never re-rendered. This naturally preserves thinking across turns
+**at runtime**.
 
-**Sanity check (Layer-2 test).** At end of trajectory, decode every
-role-tagged segment from the recorded `prompt_ids ++ response_ids`,
-re-render the message list through `apply_chat_template`, and assert
-byte-for-byte equality with the original ids. If divergent on stock
-Qwen3-8B, swap to `willcb/Qwen3-8B` (already cached locally) and
-rerun.
+**However**, when we want to *re-tokenize* the full message list (for
+the Layer-2 round-trip identity check, or for any tooling that
+reconstructs token ids from `messages`), the **stock `Qwen/Qwen3-8B`
+chat template strips `<think>` content from all but the last
+assistant turn** — verified empirically with HF transformers 5.7.0.
+
+**Mitigation.** Use the community variant **`willcb/Qwen3-8B`** as
+both the training student and the eval model. It is the same weights
+with a modified `chat_template` that retains `<think>` blocks across
+turns. Already cached locally at
+`~/.cache/huggingface/hub/models--willcb--Qwen3-8B/`. All scripts
+default to `willcb/Qwen3-8B`; stock Qwen3-8B is not used.
 
 ## 5. Prompt structure
 

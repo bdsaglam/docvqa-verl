@@ -2601,4 +2601,16 @@ Type consistency:
 - Agent name consistent: `docvqa_repl` (in `@register`, `agent.yaml`, launch script `default_agent_loop`).
 - Knob names consistent: `max_iterations_base`, `max_iterations_cap`, `page_factor`, `max_response_tokens_per_turn`, `max_obs_chars`, `subprocess_timeout_s`, `parse_error_strikes_to_terminate`.
 
-One note for the implementer: the round-trip test in Task 11 is the canary for Qwen3 chat template behavior. If it fails, the fix is to swap `Qwen/Qwen3-8B` for `willcb/Qwen3-8B` in the launch and eval scripts (both already cached locally) — that variant preserves `<think>` across turns.
+**Empirical pre-flight finding (verified before implementation):** stock
+`Qwen/Qwen3-8B`'s chat template **strips `<think>` content from prior
+assistant turns** when the full message list is re-rendered through
+`apply_chat_template`. The community variant `willcb/Qwen3-8B` (same
+weights, modified template) preserves `<think>` across turns. Both are
+cached locally at `~/.cache/huggingface/hub/`.
+
+**All tasks default to `willcb/Qwen3-8B`** as the student model. Wherever
+the plan text below mentions `Qwen/Qwen3-8B`, use `willcb/Qwen3-8B`
+instead (e.g. in `tokenizer = AutoTokenizer.from_pretrained(...)`,
+`actor_rollout_ref.model.path=...`, the `--student-model` flag of
+`scripts/eval.py`, and the `vllm serve` command). This eliminates the
+Task-11 round-trip ambiguity up-front.
