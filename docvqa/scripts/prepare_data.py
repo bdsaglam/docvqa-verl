@@ -25,6 +25,9 @@ from typing import Any
 from PIL import Image
 from datasets import load_dataset
 
+# DocVQA pages can be very large scans; disable PIL's decompression-bomb check.
+Image.MAX_IMAGE_PIXELS = None
+
 
 SRC_DOCVQA_DATA = Path.home() / "repos" / "docvqa" / "data"
 
