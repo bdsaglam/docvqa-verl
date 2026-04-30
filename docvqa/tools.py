@@ -44,3 +44,46 @@ def search(doc_dir: str, query: str, k: int = 5) -> list[dict]:
         c = chunks[idx]
         out.append({"page": c["page"], "score": round(float(score), 2), "text": c["text"]})
     return out
+
+
+# ---------------------------------------------------------------------------
+# batch_look — parallel VLM image-query handler
+# ---------------------------------------------------------------------------
+import asyncio
+import base64
+
+import httpx
+
+
+async def _one_look(
+    client: httpx.AsyncClient, base_url: str, model_id: str,
+    path: str, query: str,
+) -> str:
+    img_b64 = base64.b64encode(Path(path).read_bytes()).decode()
+    payload = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+            {"type": "text", "text": query},
+        ]}],
+        "max_tokens": 512,
+        "temperature": 0.0,
+    }
+    try:
+        resp = await client.post(f"{base_url}/v1/chat/completions", json=payload)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"[VLM error: {type(e).__name__}: {e}]"
+
+
+async def batch_look(
+    requests: list[dict],
+    client: httpx.AsyncClient,
+    base_url: str,
+    model_id: str,
+) -> list[str]:
+    """Send (path, query) pairs to the VLM in parallel. Returns answers in order."""
+    coros = [_one_look(client, base_url, model_id, r["path"], r["query"]) for r in requests]
+    return await asyncio.gather(*coros)
