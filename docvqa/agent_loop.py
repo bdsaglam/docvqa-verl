@@ -4,8 +4,9 @@ Replicates the deployed `flat_solo` scaffold: persistent CPython subprocess
 with batch_look/search/SUBMIT, model emits <think>...</think> + a single
 ```python ... ``` fence per turn, ANLS reward end-of-trajectory.
 
-Tasks 1-10 are done; only Task 11 (SUBMIT termination + final-answer
-round-trip) remains.
+The agent loop is fully implemented: per-turn generation, code parsing,
+subprocess execution, observation appending, SUBMIT termination, and
+parse-error / iter-cap / token-cap fallbacks.
 """
 from __future__ import annotations
 
@@ -204,12 +205,28 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     except (CodeInterpreterError, SyntaxError) as e:
                         result = f"[Error] {e}"
 
-                    # SUBMIT handling (FinalOutput) is deferred to Task 11.
-                    # For now stringify so the iter_cap path works.
                     if isinstance(result, tuple) and isinstance(result[0], FinalOutput):
-                        observation = f"FINAL: {result[0].output}"
+                        final, captured = result
+                        submitted_answer = final.output.get("answer")
+                        observation = (
+                            (captured + "\n" if captured else "") +
+                            f"FINAL: {submitted_answer!r}"
+                        )
+                        await self._append_observation(
+                            messages, response_ids, response_mask,
+                            turn, max_iter, observation,
+                        )
+                        termination = "submit"
+                        break
                     elif isinstance(result, FinalOutput):
-                        observation = f"FINAL: {result.output}"
+                        submitted_answer = result.output.get("answer")
+                        observation = f"FINAL: {submitted_answer!r}"
+                        await self._append_observation(
+                            messages, response_ids, response_mask,
+                            turn, max_iter, observation,
+                        )
+                        termination = "submit"
+                        break
                     elif isinstance(result, str) and result.startswith("[Error]"):
                         observation = result
                     elif isinstance(result, list):
@@ -278,6 +295,14 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             [{"role": "user", "content": text}],
             remove_system_prompt=True,
         )
+        # vLLM stops at <|im_end|> — the chat template separator newline
+        # between the assistant turn and the next message is not part of the
+        # model's output, and apply_chat_template(remove_system_prompt=True)
+        # for a single user message starts directly at <|im_start|>. We
+        # prepend it here so prompt_ids+response_ids is a faithful reconstruction
+        # of `messages` rendered through the chat template.
+        nl_token_ids = self.tokenizer.encode("\n", add_special_tokens=False)
+        obs_ids = list(nl_token_ids) + list(obs_ids)
         response_ids += obs_ids
         response_mask += [0] * len(obs_ids)
 

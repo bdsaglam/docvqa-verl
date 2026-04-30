@@ -174,3 +174,78 @@ async def test_run_records_messages_in_extra_fields(tokenizer, sample_doc_dir):
     assert msgs[1]["role"] == "user" and "Question" in msgs[1]["content"]
     assert msgs[2]["role"] == "assistant"
     assert msgs[3]["role"] == "user" and "Turn" in msgs[3]["content"]
+
+
+@pytest.mark.asyncio
+async def test_run_submit_terminates_with_answer(tokenizer, sample_doc_dir):
+    text = '<think>Easy.</think>\n```python\nSUBMIT(answer="$1.2B")\n```'
+    assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
+    other_text = '```python\nprint("ignored")\n```'
+    other_ids = tokenizer.encode(other_text + "<|im_end|>", add_special_tokens=False)
+
+    cfg = _make_trainer_config(actor_rollout_ref={
+        "rollout": {
+            "prompt_length": 16384, "response_length": 32768,
+            "agent": {"agent_loop_config_path": None,
+                      "docvqa": {"max_iterations_base": 5,
+                                 "max_iterations_cap": 5}},
+            "multi_turn": {},
+            "trace": {"project_name": "t", "experiment_name": "t"},
+        }, "model": {},
+    })
+    loop = DocVQAReplAgentLoop(
+        trainer_config=DictConfigWrap(cfg),
+        server_manager=_ScriptedServerManager([assistant_ids, other_ids, other_ids]),
+        tokenizer=tokenizer,
+        processor=None, dataset_cls=MagicMock,
+        data_config=DictConfigWrap(cfg.data),
+    )
+    out = await loop.run(
+        sampling_params={"temperature": 1.0},
+        question_id="q0", question="?", doc_dir=str(sample_doc_dir),
+        gold_answer="x", category="business_report",
+    )
+    assert out.extra_fields["termination"] == "submit"
+    assert out.extra_fields["submitted_answer"] == "$1.2B"
+    assert out.extra_fields["num_turns"] == 1
+
+
+@pytest.mark.asyncio
+async def test_round_trip_messages_match_recorded_ids(tokenizer, sample_doc_dir):
+    """The recorded prompt_ids++response_ids should re-tokenize from `messages`."""
+    text = '<think>x</think>\n```python\nprint("hi")\n```'
+    assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
+
+    cfg = _make_trainer_config(actor_rollout_ref={
+        "rollout": {
+            "prompt_length": 16384, "response_length": 32768,
+            "agent": {"agent_loop_config_path": None,
+                      "docvqa": {"max_iterations_base": 2,
+                                 "max_iterations_cap": 2}},
+            "multi_turn": {},
+            "trace": {"project_name": "t", "experiment_name": "t"},
+        }, "model": {},
+    })
+    loop = DocVQAReplAgentLoop(
+        trainer_config=DictConfigWrap(cfg),
+        server_manager=_ScriptedServerManager([assistant_ids] * 5),
+        tokenizer=tokenizer,
+        processor=None, dataset_cls=MagicMock,
+        data_config=DictConfigWrap(cfg.data),
+    )
+    out = await loop.run(
+        sampling_params={"temperature": 1.0},
+        question_id="q0", question="?", doc_dir=str(sample_doc_dir),
+        gold_answer="x", category="business_report",
+    )
+
+    from verl.utils.chat_template import apply_chat_template as actl
+    rerendered = actl(
+        tokenizer, out.extra_fields["messages"], tools=None,
+        add_generation_prompt=False, tokenize=True,
+        enable_thinking=True,
+    )
+    recorded = list(out.prompt_ids) + list(out.response_ids)
+    # Allow small tail mismatch for whitespace/EOS differences.
+    assert rerendered[: len(recorded) - 8] == recorded[: len(recorded) - 8], \
+        "Trajectory token round-trip failed — chat template strips <think>"
