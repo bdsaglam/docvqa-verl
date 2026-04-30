@@ -100,19 +100,77 @@ def test_agent_loop_uses_overrides(tokenizer):
     assert loop._vlm_model_id == "fake-model"
 
 
-def test_agent_loop_run_raises_not_implemented(tokenizer):
-    """Run is filled in Task 10. For now it must raise."""
-    import asyncio
-    cfg = _make_trainer_config()
+@pytest.mark.asyncio
+async def test_run_iter_cap_with_no_submit(tokenizer, sample_doc_dir):
+    """Model emits a print but never SUBMITs; loop hits iter cap."""
+    text = "<think>Let me check.</think>\n\n```python\nprint(page_texts[0][:50])\n```"
+    assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
+    scripted = [assistant_ids] * 50
+
+    cfg = _make_trainer_config(actor_rollout_ref={
+        "rollout": {
+            "prompt_length": 16384, "response_length": 32768,
+            "agent": {"agent_loop_config_path": None,
+                      "docvqa": {"max_iterations_base": 3,
+                                 "max_iterations_cap": 3}},
+            "multi_turn": {},
+            "trace": {"project_name": "t", "experiment_name": "t"},
+        }, "model": {},
+    })
     loop = DocVQAReplAgentLoop(
         trainer_config=DictConfigWrap(cfg),
-        server_manager=_ScriptedServerManager([]),
+        server_manager=_ScriptedServerManager(scripted),
         tokenizer=tokenizer,
         processor=None,
         dataset_cls=MagicMock,
         data_config=DictConfigWrap(cfg.data),
     )
-    with pytest.raises(NotImplementedError):
-        asyncio.get_event_loop().run_until_complete(
-            loop.run(sampling_params={}, question="q", doc_dir="/tmp/x", category="x", gold_answer=None, question_id="q0")
-        )
+
+    out = await loop.run(
+        sampling_params={"temperature": 1.0},
+        question_id="q0",
+        question="What was Q3 revenue?",
+        doc_dir=str(sample_doc_dir),
+        gold_answer="$1.2B",
+        category="business_report",
+    )
+    assert out.extra_fields["termination"] == "iter_cap"
+    assert out.extra_fields["submitted_answer"] is None
+    assert out.extra_fields["num_turns"] == 3
+    assert len(out.response_mask) == len(out.response_ids)
+    assert sum(out.response_mask) > 0
+    assert any(m == 0 for m in out.response_mask)
+
+
+@pytest.mark.asyncio
+async def test_run_records_messages_in_extra_fields(tokenizer, sample_doc_dir):
+    text = "<think>OK.</think>\n```python\nprint('hi')\n```"
+    assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
+
+    cfg = _make_trainer_config(actor_rollout_ref={
+        "rollout": {
+            "prompt_length": 16384, "response_length": 32768,
+            "agent": {"agent_loop_config_path": None,
+                      "docvqa": {"max_iterations_base": 2,
+                                 "max_iterations_cap": 2}},
+            "multi_turn": {},
+            "trace": {"project_name": "t", "experiment_name": "t"},
+        }, "model": {},
+    })
+    loop = DocVQAReplAgentLoop(
+        trainer_config=DictConfigWrap(cfg),
+        server_manager=_ScriptedServerManager([assistant_ids] * 5),
+        tokenizer=tokenizer,
+        processor=None, dataset_cls=MagicMock,
+        data_config=DictConfigWrap(cfg.data),
+    )
+    out = await loop.run(
+        sampling_params={"temperature": 1.0},
+        question_id="q0", question="?", doc_dir=str(sample_doc_dir),
+        gold_answer="x", category="business_report",
+    )
+    msgs = out.extra_fields["messages"]
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user" and "Question" in msgs[1]["content"]
+    assert msgs[2]["role"] == "assistant"
+    assert msgs[3]["role"] == "user" and "Turn" in msgs[3]["content"]

@@ -4,16 +4,30 @@ Replicates the deployed `flat_solo` scaffold: persistent CPython subprocess
 with batch_look/search/SUBMIT, model emits <think>...</think> + a single
 ```python ... ``` fence per turn, ANLS reward end-of-trajectory.
 
-This file currently only implements the class skeleton. Tasks 10 and 11
-fill in `run()`.
+Tasks 1-10 are done; only Task 11 (SUBMIT termination + final-answer
+round-trip) remains.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import time
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from verl.experimental.agent_loop.agent_loop import (
-    AgentLoopBase, AgentLoopOutput, register,
+    AgentLoopBase, AgentLoopMetrics, AgentLoopOutput, register,
+)
+
+from docvqa.parser import parse_last_python_fence
+from docvqa.prompts import (
+    build_first_user_message, build_observation_message, build_system_prompt,
+)
+from docvqa.sandbox import build_sandbox_code
+from docvqa.subprocess_interp import (
+    CodeInterpreterError, FinalOutput, SubprocessInterpreter,
 )
 
 
@@ -77,5 +91,198 @@ class DocVQAReplAgentLoop(AgentLoopBase):
     async def run(
         self, sampling_params: dict[str, Any], **kwargs
     ) -> AgentLoopOutput:
-        # Implemented in Task 10. SUBMIT handling in Task 11.
-        raise NotImplementedError("DocVQAReplAgentLoop.run will be filled in Task 10")
+        wall_start = time.monotonic()
+
+        question = kwargs["question"]
+        question_id = kwargs.get("question_id", "")
+        doc_dir = kwargs["doc_dir"]
+        category = kwargs.get("category", "unknown")
+        # gold_answer is read here purely for logging / future use;
+        # the reward function uses ground_truth from the dataset row.
+        _gold_answer = kwargs.get("gold_answer")
+
+        meta = json.loads((Path(doc_dir) / "metadata.json").read_text())
+        num_pages = meta["num_pages"]
+        page_texts = [
+            p.read_text() for p in sorted(
+                (Path(doc_dir) / "ocr").glob("page_*.md"),
+                key=lambda p: int(p.stem.split("_")[1]),
+            )
+        ]
+
+        max_iter = _adaptive_max_iter(num_pages, self._knobs)
+
+        sys_prompt = build_system_prompt(category)
+        first_user = build_first_user_message(question, category, num_pages, page_texts)
+        messages: list[dict] = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": first_user},
+        ]
+        prompt_ids: list[int] = await self.apply_chat_template(messages)
+        response_ids: list[int] = []
+        response_mask: list[int] = []
+
+        import httpx
+        from docvqa import tools as host_tools
+
+        vlm_client = httpx.AsyncClient(timeout=120)
+        interp: SubprocessInterpreter | None = None
+
+        request_id = uuid4().hex
+        termination = "iter_cap"
+        submitted_answer: str | None = None
+        num_turns = 0
+        vlm_calls = 0
+        search_calls = 0
+        parse_error_strikes = 0
+
+        try:
+            async def _batch_look_host(requests: list[dict]) -> list[str]:
+                return await host_tools.batch_look(
+                    requests, vlm_client, self._vlm_base_url, self._vlm_model_id,
+                )
+
+            def _batch_look_sync(requests):
+                """Bridge to async — invoked from a host-side thread by IPC."""
+                return asyncio.run_coroutine_threadsafe(
+                    _batch_look_host(requests), self.loop,
+                ).result(timeout=300)
+
+            def _search_sync(query: str, k: int = 5):
+                return host_tools.search(doc_dir, query, k)
+
+            interp = SubprocessInterpreter(
+                sandbox_code=build_sandbox_code(),
+                tools={"batch_look": _batch_look_sync, "search": _search_sync},
+                output_fields=[{"name": "answer", "type": "str"}],
+                timeout=self._knobs["subprocess_timeout_s"],
+                extra_env={"DOC_DIR": doc_dir},
+            )
+            interp.start()
+
+            for turn in range(1, max_iter + 1):
+                num_turns += 1
+
+                token_out = await self.server_manager.generate(
+                    request_id=request_id,
+                    prompt_ids=prompt_ids + response_ids,
+                    sampling_params={
+                        **sampling_params,
+                        "max_tokens": self._knobs["max_response_tokens_per_turn"],
+                        "stop": ["<|im_end|>"],
+                    },
+                )
+                assistant_ids = list(token_out.token_ids)
+                response_ids += assistant_ids
+                response_mask += [1] * len(assistant_ids)
+                assistant_text = self.tokenizer.decode(
+                    assistant_ids, skip_special_tokens=False,
+                )
+                clean_text = assistant_text.split("<|im_end|>")[0]
+                messages.append({"role": "assistant", "content": clean_text})
+
+                code = parse_last_python_fence(clean_text)
+                if code is None:
+                    parse_error_strikes += 1
+                    observation = (
+                        "[Error] No `python` code block found. "
+                        "Write a single ```python ... ``` block."
+                    )
+                    if parse_error_strikes >= self._knobs["parse_error_strikes_to_terminate"]:
+                        await self._append_observation(
+                            messages, response_ids, response_mask,
+                            turn, max_iter, observation,
+                        )
+                        termination = "parse_error"
+                        break
+                else:
+                    parse_error_strikes = 0
+                    try:
+                        result = await self.loop.run_in_executor(
+                            None, interp.execute, code,
+                        )
+                    except (CodeInterpreterError, SyntaxError) as e:
+                        result = f"[Error] {e}"
+
+                    # SUBMIT handling (FinalOutput) is deferred to Task 11.
+                    # For now stringify so the iter_cap path works.
+                    if isinstance(result, tuple) and isinstance(result[0], FinalOutput):
+                        observation = f"FINAL: {result[0].output}"
+                    elif isinstance(result, FinalOutput):
+                        observation = f"FINAL: {result.output}"
+                    elif isinstance(result, str) and result.startswith("[Error]"):
+                        observation = result
+                    elif isinstance(result, list):
+                        observation = "\n".join(map(str, result))
+                    elif result:
+                        observation = str(result)
+                    else:
+                        observation = "(no output - did you forget to print?)"
+
+                    if "batch_look(" in code:
+                        vlm_calls += code.count("batch_look(")
+                    if "search(" in code:
+                        search_calls += code.count("search(")
+
+                    observation = self._truncate(observation)
+
+                await self._append_observation(
+                    messages, response_ids, response_mask,
+                    turn, max_iter, observation,
+                )
+
+                if len(response_ids) >= self._response_length_cap - 256:
+                    termination = "token_cap"
+                    break
+            else:
+                termination = "iter_cap"
+
+        finally:
+            if interp is not None:
+                try:
+                    interp.shutdown()
+                except Exception:
+                    pass
+            try:
+                await vlm_client.aclose()
+            except Exception:
+                pass
+
+        return AgentLoopOutput(
+            prompt_ids=prompt_ids,
+            response_ids=response_ids[: self._response_length_cap],
+            response_mask=response_mask[: self._response_length_cap],
+            num_turns=num_turns,
+            metrics=AgentLoopMetrics(),
+            extra_fields={
+                "messages": messages,
+                "termination": termination,
+                "submitted_answer": submitted_answer,
+                "num_turns": num_turns,
+                "vlm_calls": vlm_calls,
+                "search_calls": search_calls,
+                "wall_clock_s": time.monotonic() - wall_start,
+                "doc_id": meta["doc_id"],
+                "question_id": question_id,
+                "category": category,
+            },
+        )
+
+    async def _append_observation(
+        self, messages: list[dict], response_ids: list[int],
+        response_mask: list[int], turn: int, max_iter: int, output: str,
+    ) -> None:
+        text = build_observation_message(turn, max_iter, output)
+        messages.append({"role": "user", "content": text})
+        obs_ids = await self.apply_chat_template(
+            [{"role": "user", "content": text}],
+            remove_system_prompt=True,
+        )
+        response_ids += obs_ids
+        response_mask += [0] * len(obs_ids)
+
+    def _truncate(self, text: str) -> str:
+        cap = self._knobs["max_obs_chars"]
+        if len(text) <= cap:
+            return text
+        return text[:cap] + "\n... (truncated)"
