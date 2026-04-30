@@ -47,7 +47,7 @@ phases, listed but not designed here.
 - Training the VLM. The 27B VLM at `localhost:8928` stays frozen.
 - Modifying verl's trainer, AgentLoopWorker, AgentLoopManager,
   RewardManager, or the dataset class. Everything below sits in
-  `recipe/docvqa/`.
+  `docvqa/`.
 
 ## 3. Architecture
 
@@ -87,27 +87,27 @@ Final output: AgentLoopOutput(prompt_ids, response_ids, response_mask,
 
 ### 3.2 Files
 
-All new code lives under `recipe/docvqa/`. Tests under
-`tests/recipe/docvqa/`. Example dataset prep under
-`recipe/docvqa/scripts/`.
+All new code lives under `docvqa/`. Tests under
+`tests/docvqa/`. Example dataset prep under
+`docvqa/scripts/`.
 
 | Path | Purpose |
 |---|---|
-| `recipe/docvqa/agent_loop.py` | `DocVQAReplAgentLoop(AgentLoopBase)`. The turn-loop, prompt construction, response_mask bookkeeping. |
-| `recipe/docvqa/subprocess_interp.py` | Vendored from `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py`, stripped of DSPy + `display` + `RESET_HISTORY` + `dspy_lm` config. |
-| `recipe/docvqa/sandbox.py` | Inline Python startup snippet for the subprocess: reads `DOC_DIR`, populates `pages`/`page_texts`, defines `SUBMIT` and the IPC tool proxies. |
-| `recipe/docvqa/tools.py` | Host-side handlers: `batch_look` (HTTP to localhost:8928 VLM) and `search` (BM25 over `doc_dir/bm25/`). Async. |
-| `recipe/docvqa/prompts.py` | System prompt template + first-user-message template + per-turn observation message template. Lifts `ANSWER_FORMATTING_RULES` and `get_category_tips` from the docvqa repo. |
-| `recipe/docvqa/dataset.py` | Builds verl-compatible dataset rows from `data/{split}/questions.json` + `data/{split}/docs/{doc_id}/`. |
-| `recipe/docvqa/reward.py` | ANLS reward function. Computes ANLS, returns `(score, extra_info)` so the agent loop's `extra_fields` flow into the rollout dump. |
-| `recipe/docvqa/agent.yaml` | One-line Hydra registration: `_target_: recipe.docvqa.agent_loop.DocVQAReplAgentLoop` under name `docvqa_repl`. |
-| `recipe/docvqa/scripts/prepare_data.py` | Materializes per-document working directories from source datasets (DocVQA-2026 first; DocVQA / MP-DocVQA / etc. behind feature flags for Phase 1). |
-| `recipe/docvqa/scripts/eval.py` | Layer-3 evaluation runner — instantiates the agent loop without verl training, runs over a split, computes ANLS. |
-| `recipe/docvqa/scripts/run_smoke_grpo.sh` | Layer-4 smoke-training launcher. |
-| `tests/recipe/docvqa/test_subprocess_interp.py` | Layer-1 unit tests. |
-| `tests/recipe/docvqa/test_parser.py` | Layer-1 unit tests for code-fence extraction. |
-| `tests/recipe/docvqa/test_agent_loop.py` | Layer-2 integration test with a scripted `server_manager`. |
-| `tests/recipe/docvqa/fixtures/` | Canned trajectory fixtures for Layer-2. |
+| `docvqa/agent_loop.py` | `DocVQAReplAgentLoop(AgentLoopBase)`. The turn-loop, prompt construction, response_mask bookkeeping. |
+| `docvqa/subprocess_interp.py` | Vendored from `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py`, stripped of DSPy + `display` + `RESET_HISTORY` + `dspy_lm` config. |
+| `docvqa/sandbox.py` | Inline Python startup snippet for the subprocess: reads `DOC_DIR`, populates `pages`/`page_texts`, defines `SUBMIT` and the IPC tool proxies. |
+| `docvqa/tools.py` | Host-side handlers: `batch_look` (HTTP to localhost:8928 VLM) and `search` (BM25 over `doc_dir/bm25/`). Async. |
+| `docvqa/prompts.py` | System prompt template + first-user-message template + per-turn observation message template. Lifts `ANSWER_FORMATTING_RULES` and `get_category_tips` from the docvqa repo. |
+| `docvqa/dataset.py` | Builds verl-compatible dataset rows from `data/{split}/questions.json` + `data/{split}/docs/{doc_id}/`. |
+| `docvqa/reward.py` | ANLS reward function. Computes ANLS, returns `(score, extra_info)` so the agent loop's `extra_fields` flow into the rollout dump. |
+| `docvqa/agent.yaml` | One-line Hydra registration: `_target_: docvqa.agent_loop.DocVQAReplAgentLoop` under name `docvqa_repl`. |
+| `docvqa/scripts/prepare_data.py` | Materializes per-document working directories from source datasets (DocVQA-2026 first; DocVQA / MP-DocVQA / etc. behind feature flags for Phase 1). |
+| `docvqa/scripts/eval.py` | Layer-3 evaluation runner — instantiates the agent loop without verl training, runs over a split, computes ANLS. |
+| `docvqa/scripts/run_smoke_grpo.sh` | Layer-4 smoke-training launcher. |
+| `tests/docvqa/test_subprocess_interp.py` | Layer-1 unit tests. |
+| `tests/docvqa/test_parser.py` | Layer-1 unit tests for code-fence extraction. |
+| `tests/docvqa/test_agent_loop.py` | Layer-2 integration test with a scripted `server_manager`. |
+| `tests/docvqa/fixtures/` | Canned trajectory fixtures for Layer-2. |
 
 ## 4. Per-turn protocol
 
@@ -496,7 +496,7 @@ required for this spec.)
 
 ## 8. Reward function
 
-`recipe/docvqa/reward.py` computes ANLS via `evaluate_prediction`
+`docvqa/reward.py` computes ANLS via `evaluate_prediction`
 (lifted from `~/repos/docvqa/src/docvqa/metrics.py`). The function
 signature matches verl's reward-fn contract:
 
@@ -527,13 +527,13 @@ Four layers, increasing in cost. Each must clear before the next.
 
 ### Layer 1 — unit/integration smoke
 
-`tests/recipe/docvqa/test_subprocess_interp.py` — exercises the
+`tests/docvqa/test_subprocess_interp.py` — exercises the
 vendored interpreter without verl: state persistence across
 `execute()` calls; `SUBMIT` semantics; IPC round-trip with a fake
 host handler; sandbox crash recovery (the host receives `[Error]`
 and can keep going).
 
-`tests/recipe/docvqa/test_parser.py` — code-fence extraction:
+`tests/docvqa/test_parser.py` — code-fence extraction:
 single fence, multiple fences (last wins), no fence (returns `None`),
 nested backticks, fence with vs without `python` lang, fence inside
 `<think>` (must be ignored — only fences *outside* `<think>` count).
@@ -542,7 +542,7 @@ Runs in <10 s.
 
 ### Layer 2 — agent loop end-to-end with a dummy LM
 
-`tests/recipe/docvqa/test_agent_loop.py` — instantiate
+`tests/docvqa/test_agent_loop.py` — instantiate
 `DocVQAReplAgentLoop` and run it against a scripted `server_manager`
 that returns canned assistant turns from a fixture. Asserts:
 - `prompt_ids` / `response_ids` / `response_mask` shapes.
@@ -556,11 +556,11 @@ that returns canned assistant turns from a fixture. Asserts:
 - Rollout-dump record (a synthetic JSONL line) round-trips through
   `json.loads`.
 
-Fixtures live at `tests/recipe/docvqa/fixtures/*.json`.
+Fixtures live at `tests/docvqa/fixtures/*.json`.
 
 ### Layer 3 — ANLS reproduction on val
 
-`recipe/docvqa/scripts/eval.py` runs the new agent loop over
+`docvqa/scripts/eval.py` runs the new agent loop over
 DocVQA-2026 val (25 docs / 80 questions) with **Qwen3-8B no-FT** and
 the running 27B VLM at `localhost:8928`. Pass criterion:
 
@@ -580,7 +580,7 @@ If gap is > 5pp, debug before training.
 
 ### Layer 4 — sanity GRPO run
 
-`recipe/docvqa/scripts/run_smoke_grpo.sh`. ~50–100 GRPO steps, 200
+`docvqa/scripts/run_smoke_grpo.sh`. ~50–100 GRPO steps, 200
 training questions, n=4 rollouts/group. Confirms:
 - No OOM.
 - `response_mask` is well-formed.
@@ -637,7 +637,7 @@ DocVQA-family training set ≈ 50–200 GB. Manageable.
 
 ## 12. Phase-1 launch (GRPO only)
 
-`recipe/docvqa/scripts/run_phase1_grpo.sh` (the production launch,
+`docvqa/scripts/run_phase1_grpo.sh` (the production launch,
 distinct from `run_smoke_grpo.sh`):
 
 ```bash
@@ -647,11 +647,11 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.lora_rank=16 \
     actor_rollout_ref.actor.lora_alpha=32 \
     actor_rollout_ref.rollout.n=8 \
-    actor_rollout_ref.rollout.agent.agent_loop_config_path=recipe/docvqa/agent.yaml \
+    actor_rollout_ref.rollout.agent.agent_loop_config_path=docvqa/agent.yaml \
     actor_rollout_ref.rollout.agent.default_agent_loop=docvqa_repl \
     data.train_files=data/train/questions.json \
     data.val_files=data/val/questions.json \
-    custom_reward_function.path=recipe/docvqa/reward.py \
+    custom_reward_function.path=docvqa/reward.py \
     trainer.rollout_data_dir=\${hydra:runtime.output_dir}/rollouts \
     trainer.log_val_generations=20 \
     ...
@@ -708,7 +708,7 @@ specs when we get there.
 - Whether to log the system prompt verbatim per rollout in the JSONL
   (it's identical across rollouts of the same step → wasteful) or
   hash it once and reference. Default: log verbatim — disk is cheap.
-- Whether `recipe/docvqa/scripts/eval.py` should also drive the
+- Whether `docvqa/scripts/eval.py` should also drive the
   trained-model eval, or whether to use the eval harness in
   `~/repos/docvqa`. Default: this spec ships its own eval; the docvqa
   harness comparison comes after Layer 3 passes.

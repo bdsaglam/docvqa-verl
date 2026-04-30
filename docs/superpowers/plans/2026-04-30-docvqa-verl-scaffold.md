@@ -15,7 +15,7 @@
 ## File Structure
 
 ```
-recipe/docvqa/
+docvqa/
   __init__.py                  # Empty package marker.
   agent_loop.py                # DocVQAReplAgentLoop(AgentLoopBase). Orchestrator.
   subprocess_interp.py         # Vendored CPython REPL with JSON-line IPC.
@@ -32,7 +32,7 @@ recipe/docvqa/
     run_smoke_grpo.sh          # Layer-4 sanity training launcher.
     run_phase1_grpo.sh         # Phase-1 production launcher.
 
-tests/recipe/docvqa/
+tests/docvqa/
   __init__.py
   conftest.py                  # Shared pytest fixtures.
   test_parser.py               # Code-fence extraction.
@@ -54,33 +54,33 @@ data/
 ## Task 1: Bootstrap package and tests harness
 
 **Files:**
-- Create: `recipe/docvqa/__init__.py`
-- Create: `tests/recipe/docvqa/__init__.py`
-- Create: `tests/recipe/docvqa/conftest.py`
-- Create: `tests/recipe/docvqa/fixtures/sample_doc/metadata.json`
-- Create: `tests/recipe/docvqa/fixtures/sample_doc/pages/page_0.png`
-- Create: `tests/recipe/docvqa/fixtures/sample_doc/pages/page_1.png`
-- Create: `tests/recipe/docvqa/fixtures/sample_doc/ocr/page_0.md`
-- Create: `tests/recipe/docvqa/fixtures/sample_doc/ocr/page_1.md`
+- Create: `docvqa/__init__.py`
+- Create: `tests/docvqa/__init__.py`
+- Create: `tests/docvqa/conftest.py`
+- Create: `tests/docvqa/fixtures/sample_doc/metadata.json`
+- Create: `tests/docvqa/fixtures/sample_doc/pages/page_0.png`
+- Create: `tests/docvqa/fixtures/sample_doc/pages/page_1.png`
+- Create: `tests/docvqa/fixtures/sample_doc/ocr/page_0.md`
+- Create: `tests/docvqa/fixtures/sample_doc/ocr/page_1.md`
 
 - [ ] **Step 1: Create empty package markers**
 
 ```python
-# recipe/docvqa/__init__.py
+# docvqa/__init__.py
 """DocVQA recipe: agent loop, tools, prompts, reward."""
 ```
 
 ```python
-# tests/recipe/docvqa/__init__.py
+# tests/docvqa/__init__.py
 ```
 
 - [ ] **Step 2: Create the sample_doc fixture used by every test that needs a real doc_dir**
 
 ```bash
-mkdir -p tests/recipe/docvqa/fixtures/sample_doc/{pages,ocr,bm25}
+mkdir -p tests/docvqa/fixtures/sample_doc/{pages,ocr,bm25}
 ```
 
-Then write `tests/recipe/docvqa/fixtures/sample_doc/metadata.json`:
+Then write `tests/docvqa/fixtures/sample_doc/metadata.json`:
 
 ```json
 {
@@ -91,7 +91,7 @@ Then write `tests/recipe/docvqa/fixtures/sample_doc/metadata.json`:
 }
 ```
 
-`tests/recipe/docvqa/fixtures/sample_doc/ocr/page_0.md`:
+`tests/docvqa/fixtures/sample_doc/ocr/page_0.md`:
 
 ```markdown
 # Q3 Financial Report
@@ -100,7 +100,7 @@ The total revenue in Q3 was $1.2 billion, up 15% year-over-year.
 Net income reached $250 million.
 ```
 
-`tests/recipe/docvqa/fixtures/sample_doc/ocr/page_1.md`:
+`tests/docvqa/fixtures/sample_doc/ocr/page_1.md`:
 
 ```markdown
 # Forward Guidance
@@ -114,16 +114,16 @@ Generate two trivial 100×100 PNG pages via Python:
 # Run once, manually:
 from PIL import Image
 Image.new("RGB", (100, 100), color="white").save(
-    "tests/recipe/docvqa/fixtures/sample_doc/pages/page_0.png")
+    "tests/docvqa/fixtures/sample_doc/pages/page_0.png")
 Image.new("RGB", (100, 100), color="lightgray").save(
-    "tests/recipe/docvqa/fixtures/sample_doc/pages/page_1.png")
+    "tests/docvqa/fixtures/sample_doc/pages/page_1.png")
 ```
 
 Commit the PNGs as binary (small).
 
 - [ ] **Step 3: Build the BM25 index for sample_doc using bm25s**
 
-Create `tests/recipe/docvqa/fixtures/sample_doc/build_index.py` (run once, output committed):
+Create `tests/docvqa/fixtures/sample_doc/build_index.py` (run once, output committed):
 
 ```python
 """Build BM25 index for sample_doc fixture. Run once, committed output."""
@@ -152,13 +152,13 @@ retriever.save(bm25_dir, corpus=None)
 print(f"Wrote {len(chunks)} chunks to {bm25_dir}")
 ```
 
-Run it: `python tests/recipe/docvqa/fixtures/sample_doc/build_index.py`. Verify `bm25/` contains `chunks.json`, `data.csc.index.npy`, `indices.csc.index.npy`, `indptr.csc.index.npy`, `params.index.json`, `vocab.index.json`.
+Run it: `python tests/docvqa/fixtures/sample_doc/build_index.py`. Verify `bm25/` contains `chunks.json`, `data.csc.index.npy`, `indices.csc.index.npy`, `indptr.csc.index.npy`, `params.index.json`, `vocab.index.json`.
 
 - [ ] **Step 4: Create conftest.py with the sample_doc path fixture**
 
 ```python
-# tests/recipe/docvqa/conftest.py
-"""Shared pytest fixtures for recipe/docvqa tests."""
+# tests/docvqa/conftest.py
+"""Shared pytest fixtures for docvqa tests."""
 from pathlib import Path
 
 import pytest
@@ -174,7 +174,7 @@ def sample_doc_dir() -> Path:
 
 ```bash
 cd /home/baris/repos/docvqa-verl
-pytest tests/recipe/docvqa/ -v
+pytest tests/docvqa/ -v
 ```
 
 Expected: "no tests ran" (collected 0 items). No errors.
@@ -182,8 +182,8 @@ Expected: "no tests ran" (collected 0 items). No errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add recipe/docvqa/__init__.py tests/recipe/docvqa/
-git commit -m "[docvqa] feat: scaffold recipe/docvqa package and test fixtures"
+git add docvqa/__init__.py tests/docvqa/
+git commit -m "[docvqa] feat: scaffold docvqa package and test fixtures"
 ```
 
 ---
@@ -191,17 +191,17 @@ git commit -m "[docvqa] feat: scaffold recipe/docvqa package and test fixtures"
 ## Task 2: Code-fence parser
 
 **Files:**
-- Create: `recipe/docvqa/parser.py`
-- Create: `tests/recipe/docvqa/test_parser.py`
+- Create: `docvqa/parser.py`
+- Create: `tests/docvqa/test_parser.py`
 
 The parser must extract the *last* ```` ```python ```` fence in the model's text, ignore fences nested inside `<think>` blocks, and tolerate `python`/no-lang/whitespace variations.
 
 - [ ] **Step 1: Write failing tests covering the contract**
 
 ```python
-# tests/recipe/docvqa/test_parser.py
+# tests/docvqa/test_parser.py
 """Tests for code-fence extraction."""
-from recipe.docvqa.parser import parse_last_python_fence
+from docvqa.parser import parse_last_python_fence
 
 
 def test_single_python_fence():
@@ -257,15 +257,15 @@ def test_strips_outer_whitespace():
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_parser.py -v
+pytest tests/docvqa/test_parser.py -v
 ```
 
-Expected: `ImportError` on `recipe.docvqa.parser`.
+Expected: `ImportError` on `docvqa.parser`.
 
 - [ ] **Step 3: Implement the parser**
 
 ```python
-# recipe/docvqa/parser.py
+# docvqa/parser.py
 """Extract the last ```python ... ``` fence from a model response.
 
 Fences nested inside <think>...</think> blocks are ignored — only fences
@@ -306,7 +306,7 @@ def parse_last_python_fence(text: str) -> str | None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_parser.py -v
+pytest tests/docvqa/test_parser.py -v
 ```
 
 Expected: 9 passed.
@@ -314,7 +314,7 @@ Expected: 9 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/parser.py tests/recipe/docvqa/test_parser.py
+git add docvqa/parser.py tests/docvqa/test_parser.py
 git commit -m "[docvqa] feat: code-fence parser with <think> awareness"
 ```
 
@@ -323,8 +323,8 @@ git commit -m "[docvqa] feat: code-fence parser with <think> awareness"
 ## Task 3: Subprocess interpreter
 
 **Files:**
-- Create: `recipe/docvqa/subprocess_interp.py`
-- Create: `tests/recipe/docvqa/test_subprocess_interp.py`
+- Create: `docvqa/subprocess_interp.py`
+- Create: `tests/docvqa/test_subprocess_interp.py`
 
 Vendored from `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py` with:
 - `display`, `RESET_HISTORY`, `dspy_lm` config removed
@@ -334,11 +334,11 @@ Vendored from `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py` with:
 - [ ] **Step 1: Write failing tests for the contract**
 
 ```python
-# tests/recipe/docvqa/test_subprocess_interp.py
+# tests/docvqa/test_subprocess_interp.py
 """Tests for the vendored subprocess interpreter."""
 import pytest
 
-from recipe.docvqa.subprocess_interp import (
+from docvqa.subprocess_interp import (
     SubprocessInterpreter, FinalOutput, CodeInterpreterError,
 )
 
@@ -417,19 +417,19 @@ def test_shutdown_is_idempotent():
 - [ ] **Step 2: Run the tests — they fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_subprocess_interp.py -v
+pytest tests/docvqa/test_subprocess_interp.py -v
 ```
 
 Expected: `ImportError`.
 
 - [ ] **Step 3: Vendor the interpreter**
 
-Copy `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py` to `recipe/docvqa/subprocess_interp.py`, then make these edits:
+Copy `~/repos/docvqa/src/docvqa/rlm/subprocess_interpreter.py` to `docvqa/subprocess_interp.py`, then make these edits:
 
 1. **Remove DSPy import lines** at top — replace `from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput` with our own definitions:
 
 ```python
-# At top of recipe/docvqa/subprocess_interp.py, after stdlib imports:
+# At top of docvqa/subprocess_interp.py, after stdlib imports:
 class CodeInterpreterError(RuntimeError):
     """Raised by the interpreter when subprocess code fails or IPC misbehaves."""
 
@@ -459,7 +459,7 @@ The resulting file is a self-contained interpreter with: `start()`, `shutdown()`
 - [ ] **Step 4: Run tests — they pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_subprocess_interp.py -v
+pytest tests/docvqa/test_subprocess_interp.py -v
 ```
 
 Expected: 6 passed. If `test_runtime_error_returns_error_marker` fails because the implementation raises rather than returns: keep that branch but adjust — the test accepts either.
@@ -467,7 +467,7 @@ Expected: 6 passed. If `test_runtime_error_returns_error_marker` fails because t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/subprocess_interp.py tests/recipe/docvqa/test_subprocess_interp.py
+git add docvqa/subprocess_interp.py tests/docvqa/test_subprocess_interp.py
 git commit -m "[docvqa] feat: vendored subprocess interpreter (no DSPy)"
 ```
 
@@ -476,23 +476,23 @@ git commit -m "[docvqa] feat: vendored subprocess interpreter (no DSPy)"
 ## Task 4: Sandbox startup snippet
 
 **Files:**
-- Create: `recipe/docvqa/sandbox.py`
-- Create: `tests/recipe/docvqa/test_sandbox.py`
+- Create: `docvqa/sandbox.py`
+- Create: `tests/docvqa/test_sandbox.py`
 
 The "sandbox code" is a Python string injected into the subprocess at startup. It reads `DOC_DIR` from env, populates `pages` and `page_texts`, and defines `SUBMIT` (which raises `_FinalOutputSignal`, already in the REPL script). Tool proxies (`batch_look`, `search`) are auto-installed by `SubprocessInterpreter` from `tools=...`.
 
 - [ ] **Step 1: Write tests for sandbox setup**
 
 ```python
-# tests/recipe/docvqa/test_sandbox.py
+# tests/docvqa/test_sandbox.py
 """Tests that the sandbox preloads pages, page_texts, and globals correctly."""
 import os
 from pathlib import Path
 
 import pytest
 
-from recipe.docvqa.sandbox import build_sandbox_code
-from recipe.docvqa.subprocess_interp import SubprocessInterpreter
+from docvqa.sandbox import build_sandbox_code
+from docvqa.subprocess_interp import SubprocessInterpreter
 
 
 def test_sandbox_loads_pages_and_page_texts(sample_doc_dir):
@@ -534,15 +534,15 @@ def test_sandbox_pages_are_pil_images(sample_doc_dir):
 - [ ] **Step 2: Run tests — fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_sandbox.py -v
+pytest tests/docvqa/test_sandbox.py -v
 ```
 
-Expected: ImportError on `recipe.docvqa.sandbox`.
+Expected: ImportError on `docvqa.sandbox`.
 
 - [ ] **Step 3: Implement `build_sandbox_code`**
 
 ```python
-# recipe/docvqa/sandbox.py
+# docvqa/sandbox.py
 """Inline Python injected into the subprocess at startup.
 
 Reads DOC_DIR env var, loads `pages` (PIL.Image list) and `page_texts`
@@ -579,7 +579,7 @@ def build_sandbox_code() -> str:
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_sandbox.py -v
+pytest tests/docvqa/test_sandbox.py -v
 ```
 
 Expected: 3 passed.
@@ -587,7 +587,7 @@ Expected: 3 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/sandbox.py tests/recipe/docvqa/test_sandbox.py
+git add docvqa/sandbox.py tests/docvqa/test_sandbox.py
 git commit -m "[docvqa] feat: sandbox startup loads pages and OCR from DOC_DIR"
 ```
 
@@ -596,19 +596,19 @@ git commit -m "[docvqa] feat: sandbox startup loads pages and OCR from DOC_DIR"
 ## Task 5: Tool host handlers — `search` (BM25)
 
 **Files:**
-- Create: `recipe/docvqa/tools.py` (initial — search only; batch_look in next task)
-- Create: `tests/recipe/docvqa/test_tools.py` (search tests now; batch_look mocks next task)
+- Create: `docvqa/tools.py` (initial — search only; batch_look in next task)
+- Create: `tests/docvqa/test_tools.py` (search tests now; batch_look mocks next task)
 
 - [ ] **Step 1: Write tests for `search`**
 
 ```python
-# tests/recipe/docvqa/test_tools.py
+# tests/docvqa/test_tools.py
 """Tests for the host-side tool handlers."""
 from pathlib import Path
 
 import pytest
 
-from recipe.docvqa.tools import search, clear_bm25_cache
+from docvqa.tools import search, clear_bm25_cache
 
 
 @pytest.fixture(autouse=True)
@@ -637,7 +637,7 @@ def test_search_filters_zero_scores(sample_doc_dir):
 
 def test_search_caches_index(sample_doc_dir):
     """Second call should not rebuild the retriever (process-local cache)."""
-    from recipe.docvqa import tools
+    from docvqa import tools
     search(str(sample_doc_dir), "Q3", k=3)
     assert str(sample_doc_dir) in tools._BM25_CACHE
     n_before = id(tools._BM25_CACHE[str(sample_doc_dir)])
@@ -649,7 +649,7 @@ def test_search_caches_index(sample_doc_dir):
 - [ ] **Step 2: Run tests — they fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_tools.py -v
+pytest tests/docvqa/test_tools.py -v
 ```
 
 Expected: ImportError.
@@ -657,7 +657,7 @@ Expected: ImportError.
 - [ ] **Step 3: Implement `search` and the cache**
 
 ```python
-# recipe/docvqa/tools.py
+# docvqa/tools.py
 """Host-side tool handlers: batch_look (HTTP→VLM) and search (BM25)."""
 from __future__ import annotations
 
@@ -709,7 +709,7 @@ def search(doc_dir: str, query: str, k: int = 5) -> list[dict]:
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_tools.py -v
+pytest tests/docvqa/test_tools.py -v
 ```
 
 Expected: 3 passed.
@@ -717,7 +717,7 @@ Expected: 3 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/tools.py tests/recipe/docvqa/test_tools.py
+git add docvqa/tools.py tests/docvqa/test_tools.py
 git commit -m "[docvqa] feat: search() BM25 host handler with per-doc cache"
 ```
 
@@ -726,12 +726,12 @@ git commit -m "[docvqa] feat: search() BM25 host handler with per-doc cache"
 ## Task 6: Tool host handlers — `batch_look` (VLM HTTP)
 
 **Files:**
-- Modify: `recipe/docvqa/tools.py`
-- Modify: `tests/recipe/docvqa/test_tools.py`
+- Modify: `docvqa/tools.py`
+- Modify: `tests/docvqa/test_tools.py`
 
 - [ ] **Step 1: Write failing tests using a mocked httpx client**
 
-Append to `tests/recipe/docvqa/test_tools.py`:
+Append to `tests/docvqa/test_tools.py`:
 
 ```python
 import asyncio
@@ -740,7 +740,7 @@ import base64
 import httpx
 import pytest
 
-from recipe.docvqa.tools import batch_look
+from docvqa.tools import batch_look
 
 
 def _mock_transport(_resps: list[str]) -> httpx.MockTransport:
@@ -804,14 +804,14 @@ asyncio_mode = "auto"
 - [ ] **Step 2: Run tests — fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_tools.py::test_batch_look_round_trip -v
+pytest tests/docvqa/test_tools.py::test_batch_look_round_trip -v
 ```
 
 Expected: ImportError on `batch_look`.
 
 - [ ] **Step 3: Implement `batch_look`**
 
-Append to `recipe/docvqa/tools.py`:
+Append to `docvqa/tools.py`:
 
 ```python
 import asyncio
@@ -858,7 +858,7 @@ async def batch_look(
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_tools.py -v
+pytest tests/docvqa/test_tools.py -v
 ```
 
 Expected: all passed.
@@ -866,7 +866,7 @@ Expected: all passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/tools.py tests/recipe/docvqa/test_tools.py pyproject.toml
+git add docvqa/tools.py tests/docvqa/test_tools.py pyproject.toml
 git commit -m "[docvqa] feat: batch_look() VLM HTTP handler with parallel requests"
 ```
 
@@ -875,8 +875,8 @@ git commit -m "[docvqa] feat: batch_look() VLM HTTP handler with parallel reques
 ## Task 7: Prompt templates
 
 **Files:**
-- Create: `recipe/docvqa/prompts.py`
-- Create: `tests/recipe/docvqa/test_prompts.py`
+- Create: `docvqa/prompts.py`
+- Create: `tests/docvqa/test_prompts.py`
 
 System prompt + first-user-message + per-turn observation. `ANSWER_FORMATTING_RULES` and `get_category_tips` are imported from the docvqa repo if it's importable; otherwise vendored as a string. To keep this repo self-contained, **vendor** them as constants here.
 
@@ -887,7 +887,7 @@ sed -n '/^ANSWER_FORMATTING_RULES/,/^[A-Z_]\+ = /p' \
     /home/baris/repos/docvqa/src/docvqa/prompts.py | head -60
 ```
 
-Read the value (it's a multi-line string) — copy verbatim into a constant in `recipe/docvqa/prompts.py` (Step 3).
+Read the value (it's a multi-line string) — copy verbatim into a constant in `docvqa/prompts.py` (Step 3).
 
 Also lift `get_category_tips`:
 
@@ -900,9 +900,9 @@ Note the function and per-category tip strings. Copy them in.
 - [ ] **Step 2: Write tests**
 
 ```python
-# tests/recipe/docvqa/test_prompts.py
+# tests/docvqa/test_prompts.py
 """Tests for prompt-template construction."""
-from recipe.docvqa.prompts import (
+from docvqa.prompts import (
     build_system_prompt, build_first_user_message, build_observation_message,
     ANSWER_FORMATTING_RULES, get_category_tips,
 )
@@ -964,7 +964,7 @@ def test_observation_message_includes_turn_counter():
 - [ ] **Step 3: Implement prompts.py**
 
 ```python
-# recipe/docvqa/prompts.py
+# docvqa/prompts.py
 """Prompt templates: system, first user, per-turn observation.
 
 ANSWER_FORMATTING_RULES and category tips are vendored from
@@ -1103,7 +1103,7 @@ def build_observation_message(turn: int, max_iter: int, output: str) -> str:
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_prompts.py -v
+pytest tests/docvqa/test_prompts.py -v
 ```
 
 Expected: 7 passed.
@@ -1126,7 +1126,7 @@ This is a docs-style edit; no test changes needed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add recipe/docvqa/prompts.py tests/recipe/docvqa/test_prompts.py
+git add docvqa/prompts.py tests/docvqa/test_prompts.py
 git commit -m "[docvqa] feat: prompt templates (system, first user, observation)"
 ```
 
@@ -1135,8 +1135,8 @@ git commit -m "[docvqa] feat: prompt templates (system, first user, observation)
 ## Task 8: Reward function (ANLS)
 
 **Files:**
-- Create: `recipe/docvqa/reward.py`
-- Create: `tests/recipe/docvqa/test_reward.py`
+- Create: `docvqa/reward.py`
+- Create: `tests/docvqa/test_reward.py`
 
 We need the ANLS implementation. Lift `evaluate_prediction` and `compute_anls` from `~/repos/docvqa/src/docvqa/metrics.py`. Keep them as a single self-contained function.
 
@@ -1156,9 +1156,9 @@ Read the bodies to understand:
 - [ ] **Step 2: Write tests**
 
 ```python
-# tests/recipe/docvqa/test_reward.py
+# tests/docvqa/test_reward.py
 """Tests for the ANLS reward function."""
-from recipe.docvqa.reward import compute_anls, compute_score
+from docvqa.reward import compute_anls, compute_score
 
 
 def test_anls_exact_match():
@@ -1219,7 +1219,7 @@ def test_compute_score_passes_through_metadata():
 - [ ] **Step 3: Implement reward.py**
 
 ```python
-# recipe/docvqa/reward.py
+# docvqa/reward.py
 """ANLS reward for DocVQA. Plugs into verl's custom_reward_function hook."""
 from __future__ import annotations
 
@@ -1294,7 +1294,7 @@ def compute_score(
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_reward.py -v
+pytest tests/docvqa/test_reward.py -v
 ```
 
 Expected: 7 passed.
@@ -1302,7 +1302,7 @@ Expected: 7 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/reward.py tests/recipe/docvqa/test_reward.py
+git add docvqa/reward.py tests/docvqa/test_reward.py
 git commit -m "[docvqa] feat: ANLS reward function with extra_info passthrough"
 ```
 
@@ -1311,8 +1311,8 @@ git commit -m "[docvqa] feat: ANLS reward function with extra_info passthrough"
 ## Task 9: AgentLoop — class skeleton with no per-turn loop
 
 **Files:**
-- Create: `recipe/docvqa/agent_loop.py`
-- Create: `tests/recipe/docvqa/test_agent_loop.py`
+- Create: `docvqa/agent_loop.py`
+- Create: `tests/docvqa/test_agent_loop.py`
 
 We split the agent loop into three tasks (9, 10, 11) so the diff stays small.
 
@@ -1321,7 +1321,7 @@ This task: instantiate the class, register it, accept a row, build the initial p
 - [ ] **Step 1: Skeleton test — instantiation + zero-turn run with mocked server_manager**
 
 ```python
-# tests/recipe/docvqa/test_agent_loop.py
+# tests/docvqa/test_agent_loop.py
 """End-to-end tests for DocVQAReplAgentLoop with scripted server_manager."""
 from __future__ import annotations
 
@@ -1332,7 +1332,7 @@ from unittest.mock import MagicMock
 import pytest
 from omegaconf import OmegaConf
 
-from recipe.docvqa.agent_loop import DocVQAReplAgentLoop
+from docvqa.agent_loop import DocVQAReplAgentLoop
 
 
 class _FakeTokenOutput:
@@ -1382,7 +1382,7 @@ def tokenizer():
 
 
 def test_agent_loop_instantiates(tokenizer, sample_doc_dir):
-    from recipe.docvqa.agent_loop import DictConfigWrap
+    from docvqa.agent_loop import DictConfigWrap
     cfg = _make_trainer_config()
     loop = DocVQAReplAgentLoop(
         trainer_config=DictConfigWrap(cfg),
@@ -1400,15 +1400,15 @@ def test_agent_loop_instantiates(tokenizer, sample_doc_dir):
 - [ ] **Step 2: Run test — fail**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py -v
+pytest tests/docvqa/test_agent_loop.py -v
 ```
 
-Expected: ImportError on `recipe.docvqa.agent_loop`.
+Expected: ImportError on `docvqa.agent_loop`.
 
 - [ ] **Step 3: Skeleton implementation**
 
 ```python
-# recipe/docvqa/agent_loop.py
+# docvqa/agent_loop.py
 """DocVQA REPL agent loop for verl.
 
 Replicates the deployed `flat_solo` scaffold: a persistent CPython
@@ -1429,12 +1429,12 @@ from verl.experimental.agent_loop.agent_loop import (
     AgentLoopBase, AgentLoopMetrics, AgentLoopOutput, DictConfigWrap, register,
 )
 
-from recipe.docvqa.parser import parse_last_python_fence
-from recipe.docvqa.prompts import (
+from docvqa.parser import parse_last_python_fence
+from docvqa.prompts import (
     build_first_user_message, build_observation_message, build_system_prompt,
 )
-from recipe.docvqa.sandbox import build_sandbox_code
-from recipe.docvqa.subprocess_interp import (
+from docvqa.sandbox import build_sandbox_code
+from docvqa.subprocess_interp import (
     CodeInterpreterError, FinalOutput, SubprocessInterpreter,
 )
 
@@ -1500,7 +1500,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
 - [ ] **Step 4: Run test — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py::test_agent_loop_instantiates -v
+pytest tests/docvqa/test_agent_loop.py::test_agent_loop_instantiates -v
 ```
 
 Expected: 1 passed.
@@ -1508,7 +1508,7 @@ Expected: 1 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/agent_loop.py tests/recipe/docvqa/test_agent_loop.py
+git add docvqa/agent_loop.py tests/docvqa/test_agent_loop.py
 git commit -m "[docvqa] feat: DocVQAReplAgentLoop skeleton (instantiation only)"
 ```
 
@@ -1517,14 +1517,14 @@ git commit -m "[docvqa] feat: DocVQAReplAgentLoop skeleton (instantiation only)"
 ## Task 10: AgentLoop — turn loop, parsing, observation injection
 
 **Files:**
-- Modify: `recipe/docvqa/agent_loop.py`
-- Modify: `tests/recipe/docvqa/test_agent_loop.py`
+- Modify: `docvqa/agent_loop.py`
+- Modify: `tests/docvqa/test_agent_loop.py`
 
 This task implements the meat of `run()`: spawn subprocess, render initial prompt, loop generating + executing + appending observations, with response_mask bookkeeping. SUBMIT handling deferred to Task 11.
 
 - [ ] **Step 1: Tests — single-turn `print(2+2)` then iter cap**
 
-Append to `tests/recipe/docvqa/test_agent_loop.py`:
+Append to `tests/docvqa/test_agent_loop.py`:
 
 ```python
 async def test_run_iter_cap_with_no_submit(tokenizer, sample_doc_dir):
@@ -1537,7 +1537,7 @@ async def test_run_iter_cap_with_no_submit(tokenizer, sample_doc_dir):
     # Repeat enough times to hit the iter cap.
     scripted = [assistant_ids] * 50
 
-    from recipe.docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
+    from docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
     cfg = _make_trainer_config(actor_rollout_ref={
         "rollout": {
             "prompt_length": 16384, "response_length": 32768,
@@ -1578,7 +1578,7 @@ async def test_run_records_messages_in_extra_fields(tokenizer, sample_doc_dir):
     text = "<think>OK.</think>\n```python\nprint('hi')\n```"
     assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
 
-    from recipe.docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
+    from docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
     cfg = _make_trainer_config(actor_rollout_ref={
         "rollout": {
             "prompt_length": 16384, "response_length": 32768,
@@ -1611,12 +1611,12 @@ async def test_run_records_messages_in_extra_fields(tokenizer, sample_doc_dir):
 - [ ] **Step 2: Run tests — fail (NotImplementedError)**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py -v -k "iter_cap or messages"
+pytest tests/docvqa/test_agent_loop.py -v -k "iter_cap or messages"
 ```
 
 - [ ] **Step 3: Implement `run()` (without SUBMIT handling — Task 11)**
 
-Replace the `run()` body in `recipe/docvqa/agent_loop.py`:
+Replace the `run()` body in `docvqa/agent_loop.py`:
 
 ```python
     async def run(
@@ -1656,7 +1656,7 @@ Replace the `run()` body in `recipe/docvqa/agent_loop.py`:
 
         # 4. Spawn subprocess. Tools handled host-side by closures.
         import httpx
-        from recipe.docvqa import tools as host_tools
+        from docvqa import tools as host_tools
 
         vlm_client = httpx.AsyncClient(timeout=120)
         try:
@@ -1825,7 +1825,7 @@ Replace the `run()` body in `recipe/docvqa/agent_loop.py`:
 - [ ] **Step 4: Run tests — pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py -v -k "iter_cap or messages"
+pytest tests/docvqa/test_agent_loop.py -v -k "iter_cap or messages"
 ```
 
 Expected: both tests pass. If `apply_chat_template` complains about `enable_thinking`, ensure `data_config.apply_chat_template_kwargs.enable_thinking=True` is set in `_make_trainer_config`.
@@ -1833,7 +1833,7 @@ Expected: both tests pass. If `apply_chat_template` complains about `enable_thin
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/agent_loop.py tests/recipe/docvqa/test_agent_loop.py
+git add docvqa/agent_loop.py tests/docvqa/test_agent_loop.py
 git commit -m "[docvqa] feat: agent_loop turn loop with parsing + observations"
 ```
 
@@ -1842,8 +1842,8 @@ git commit -m "[docvqa] feat: agent_loop turn loop with parsing + observations"
 ## Task 11: AgentLoop — SUBMIT handling, terminations, sanity round-trip
 
 **Files:**
-- Modify: `recipe/docvqa/agent_loop.py`
-- Modify: `tests/recipe/docvqa/test_agent_loop.py`
+- Modify: `docvqa/agent_loop.py`
+- Modify: `tests/docvqa/test_agent_loop.py`
 
 - [ ] **Step 1: Tests — SUBMIT terminates and round-trip identity**
 
@@ -1856,7 +1856,7 @@ async def test_run_submit_terminates_with_answer(tokenizer, sample_doc_dir):
     other_text = '```python\nprint("ignored")\n```'
     other_ids = tokenizer.encode(other_text + "<|im_end|>", add_special_tokens=False)
 
-    from recipe.docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
+    from docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
     cfg = _make_trainer_config(actor_rollout_ref={
         "rollout": {
             "prompt_length": 16384, "response_length": 32768,
@@ -1889,7 +1889,7 @@ async def test_round_trip_messages_match_recorded_ids(tokenizer, sample_doc_dir)
     text = '<think>x</think>\n```python\nprint("hi")\n```'
     assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
 
-    from recipe.docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
+    from docvqa.agent_loop import DocVQAReplAgentLoop, DictConfigWrap
     cfg = _make_trainer_config(actor_rollout_ref={
         "rollout": {
             "prompt_length": 16384, "response_length": 32768,
@@ -1931,12 +1931,12 @@ async def test_round_trip_messages_match_recorded_ids(tokenizer, sample_doc_dir)
 - [ ] **Step 2: Run tests — fail (SUBMIT not implemented yet, round-trip may fail)**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py -v
+pytest tests/docvqa/test_agent_loop.py -v
 ```
 
 - [ ] **Step 3: Implement SUBMIT handling**
 
-In `recipe/docvqa/agent_loop.py`, replace the FinalOutput handling block inside the turn loop with:
+In `docvqa/agent_loop.py`, replace the FinalOutput handling block inside the turn loop with:
 
 ```python
                     if isinstance(result, tuple) and isinstance(result[0], FinalOutput):
@@ -1978,7 +1978,7 @@ Also remove the for-loop `else: termination = "iter_cap"` line since we now set 
 - [ ] **Step 4: Run tests — they pass**
 
 ```bash
-pytest tests/recipe/docvqa/test_agent_loop.py -v
+pytest tests/docvqa/test_agent_loop.py -v
 ```
 
 Expected: all green. If the round-trip test fails, the chat template is stripping `<think>` from prior turns. Fall back: in `_make_trainer_config`'s `model_config`, set `tokenizer.chat_template` to the willcb/Qwen3-8B template (download from HF cache). Document this in the task notes.
@@ -1986,7 +1986,7 @@ Expected: all green. If the round-trip test fails, the chat template is strippin
 - [ ] **Step 5: Commit**
 
 ```bash
-git add recipe/docvqa/agent_loop.py tests/recipe/docvqa/test_agent_loop.py
+git add docvqa/agent_loop.py tests/docvqa/test_agent_loop.py
 git commit -m "[docvqa] feat: SUBMIT termination + token round-trip test"
 ```
 
@@ -1995,15 +1995,15 @@ git commit -m "[docvqa] feat: SUBMIT termination + token round-trip test"
 ## Task 12: Hydra registration
 
 **Files:**
-- Create: `recipe/docvqa/agent.yaml`
+- Create: `docvqa/agent.yaml`
 
 - [ ] **Step 1: Write the registration**
 
 ```yaml
-# recipe/docvqa/agent.yaml
+# docvqa/agent.yaml
 # verl agent loop registration. See verl/experimental/agent_loop/agent_loop.py:377-382.
 - name: docvqa_repl
-  _target_: recipe.docvqa.agent_loop.DocVQAReplAgentLoop
+  _target_: docvqa.agent_loop.DocVQAReplAgentLoop
 ```
 
 - [ ] **Step 2: Sanity check by importing**
@@ -2011,7 +2011,7 @@ git commit -m "[docvqa] feat: SUBMIT termination + token round-trip test"
 ```bash
 python -c "
 from omegaconf import OmegaConf
-print(OmegaConf.load('recipe/docvqa/agent.yaml'))
+print(OmegaConf.load('docvqa/agent.yaml'))
 "
 ```
 
@@ -2020,7 +2020,7 @@ Expected: prints a list with one item containing `name: docvqa_repl` and the FQN
 - [ ] **Step 3: Commit**
 
 ```bash
-git add recipe/docvqa/agent.yaml
+git add docvqa/agent.yaml
 git commit -m "[docvqa] feat: register docvqa_repl agent loop in Hydra config"
 ```
 
@@ -2029,7 +2029,7 @@ git commit -m "[docvqa] feat: register docvqa_repl agent loop in Hydra config"
 ## Task 13: Data prep for DocVQA-2026 val (Phase 0)
 
 **Files:**
-- Create: `recipe/docvqa/scripts/prepare_data.py`
+- Create: `docvqa/scripts/prepare_data.py`
 
 Builds `data/{val,test}/docs/{doc_id}/` from (a) the docvqa repo's already-prepared OCR + BM25 in `~/repos/docvqa/data/{val,test}/`, and (b) HF `VLR-CVC/DocVQA-2026` for page images. Writes `data/{val,test}/questions.json`.
 
@@ -2037,7 +2037,7 @@ Builds `data/{val,test}/docs/{doc_id}/` from (a) the docvqa repo's already-prepa
 
 ```python
 #!/usr/bin/env python
-# recipe/docvqa/scripts/prepare_data.py
+# docvqa/scripts/prepare_data.py
 """Materialize per-document working directories for DocVQA-2026.
 
 Source 1: ~/repos/docvqa/data/{val,test}/{ocr,bm25}/ (already prepared).
@@ -2157,7 +2157,7 @@ if __name__ == "__main__":
 
 ```bash
 cd /home/baris/repos/docvqa-verl
-python recipe/docvqa/scripts/prepare_data.py --splits val
+python docvqa/scripts/prepare_data.py --splits val
 ```
 
 Expected output: `[val] wrote 80 questions across 25 docs`.
@@ -2183,7 +2183,7 @@ data/
 
 ```bash
 touch data/.gitkeep
-git add recipe/docvqa/scripts/prepare_data.py .gitignore data/.gitkeep
+git add docvqa/scripts/prepare_data.py .gitignore data/.gitkeep
 git commit -m "[docvqa] feat: data prep script for DocVQA-2026 val/test"
 ```
 
@@ -2192,7 +2192,7 @@ git commit -m "[docvqa] feat: data prep script for DocVQA-2026 val/test"
 ## Task 14: Layer-3 evaluation script
 
 **Files:**
-- Create: `recipe/docvqa/scripts/eval.py`
+- Create: `docvqa/scripts/eval.py`
 
 Drives the agent loop end-to-end without verl training. Reports ANLS on val.
 
@@ -2200,12 +2200,12 @@ Drives the agent loop end-to-end without verl training. Reports ANLS on val.
 
 ```python
 #!/usr/bin/env python
-# recipe/docvqa/scripts/eval.py
+# docvqa/scripts/eval.py
 """Layer-3 ANLS reproduction. Runs DocVQAReplAgentLoop over a split with a
 running vLLM (student) and the running 27B VLM, reports ANLS.
 
 Usage:
-    python recipe/docvqa/scripts/eval.py \
+    python docvqa/scripts/eval.py \
         --questions data/val/questions.json \
         --student-base-url http://localhost:8000/v1 \
         --student-model Qwen/Qwen3-8B \
@@ -2231,14 +2231,14 @@ import httpx
 # Make sure the project root is on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from recipe.docvqa.agent_loop import DocVQAReplAgentLoop  # noqa: E402
-from recipe.docvqa.parser import parse_last_python_fence  # noqa: E402
-from recipe.docvqa.prompts import (  # noqa: E402
+from docvqa.agent_loop import DocVQAReplAgentLoop  # noqa: E402
+from docvqa.parser import parse_last_python_fence  # noqa: E402
+from docvqa.prompts import (  # noqa: E402
     build_first_user_message, build_observation_message, build_system_prompt,
 )
-from recipe.docvqa.reward import compute_anls  # noqa: E402
-from recipe.docvqa.sandbox import build_sandbox_code  # noqa: E402
-from recipe.docvqa.subprocess_interp import (  # noqa: E402
+from docvqa.reward import compute_anls  # noqa: E402
+from docvqa.sandbox import build_sandbox_code  # noqa: E402
+from docvqa.subprocess_interp import (  # noqa: E402
     CodeInterpreterError, FinalOutput, SubprocessInterpreter,
 )
 
@@ -2291,7 +2291,7 @@ def _build_loop(student_base_url, student_model, vlm_base_url, vlm_model,
                 response_length=32768):
     from omegaconf import OmegaConf
     from transformers import AutoTokenizer
-    from recipe.docvqa.agent_loop import DictConfigWrap
+    from docvqa.agent_loop import DictConfigWrap
 
     tokenizer = AutoTokenizer.from_pretrained(student_model)
     cfg = OmegaConf.create({
@@ -2409,7 +2409,7 @@ CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-8B \
 Then:
 
 ```bash
-python recipe/docvqa/scripts/eval.py \
+python docvqa/scripts/eval.py \
     --questions data/val/questions.json --limit 3 \
     --student-base-url http://localhost:8000/v1 \
     --student-model Qwen/Qwen3-8B \
@@ -2426,7 +2426,7 @@ If failures: inspect `outputs/eval/smoke3.json`, look for parse errors, subproce
 - [ ] **Step 3: Full val eval — Layer-3 gate**
 
 ```bash
-python recipe/docvqa/scripts/eval.py \
+python docvqa/scripts/eval.py \
     --questions data/val/questions.json \
     --student-base-url http://localhost:8000/v1 \
     --student-model Qwen/Qwen3-8B \
@@ -2441,7 +2441,7 @@ Expected runtime: ~30-90 min. Compare overall ANLS to the reference flat_solo le
 - [ ] **Step 4: Commit script**
 
 ```bash
-git add recipe/docvqa/scripts/eval.py
+git add docvqa/scripts/eval.py
 git commit -m "[docvqa] feat: Layer-3 eval script (ANLS reproduction on val)"
 ```
 
@@ -2450,7 +2450,7 @@ git commit -m "[docvqa] feat: Layer-3 eval script (ANLS reproduction on val)"
 ## Task 15: Phase-1 GRPO smoke launcher
 
 **Files:**
-- Create: `recipe/docvqa/scripts/run_smoke_grpo.sh`
+- Create: `docvqa/scripts/run_smoke_grpo.sh`
 
 50-100 step GRPO run on a 200-question slice. Layer-4 sanity gate.
 
@@ -2458,7 +2458,7 @@ git commit -m "[docvqa] feat: Layer-3 eval script (ANLS reproduction on val)"
 
 ```bash
 #!/usr/bin/env bash
-# recipe/docvqa/scripts/run_smoke_grpo.sh
+# docvqa/scripts/run_smoke_grpo.sh
 # Layer-4 smoke training: ~100 GRPO steps on 200 train questions.
 
 set -euo pipefail
@@ -2488,12 +2488,12 @@ CUDA_VISIBLE_DEVICES=0,1 python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.n=4 \
     actor_rollout_ref.rollout.prompt_length=16384 \
     actor_rollout_ref.rollout.response_length=32768 \
-    actor_rollout_ref.rollout.agent.agent_loop_config_path=recipe/docvqa/agent.yaml \
+    actor_rollout_ref.rollout.agent.agent_loop_config_path=docvqa/agent.yaml \
     actor_rollout_ref.rollout.agent.default_agent_loop=docvqa_repl \
     data.train_files=data/train/questions_smoke200.json \
     data.val_files=data/val/questions.json \
     data.apply_chat_template_kwargs.enable_thinking=true \
-    custom_reward_function.path=recipe/docvqa/reward.py \
+    custom_reward_function.path=docvqa/reward.py \
     custom_reward_function.name=compute_score \
     trainer.total_epochs=1 \
     trainer.save_freq=50 \
@@ -2508,9 +2508,9 @@ CUDA_VISIBLE_DEVICES=0,1 python -m verl.trainer.main_ppo \
 - [ ] **Step 2: Make it executable and dry-run with `--help` parsing**
 
 ```bash
-chmod +x recipe/docvqa/scripts/run_smoke_grpo.sh
+chmod +x docvqa/scripts/run_smoke_grpo.sh
 # Don't run yet — requires data/train and a vLLM. Just verify shellcheck.
-bash -n recipe/docvqa/scripts/run_smoke_grpo.sh
+bash -n docvqa/scripts/run_smoke_grpo.sh
 ```
 
 Expected: no syntax errors.
@@ -2518,7 +2518,7 @@ Expected: no syntax errors.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add recipe/docvqa/scripts/run_smoke_grpo.sh
+git add docvqa/scripts/run_smoke_grpo.sh
 git commit -m "[docvqa] feat: Phase-1 smoke GRPO launcher"
 ```
 
@@ -2550,7 +2550,7 @@ tmux send-keys -t vllm-student "CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-8B 
 
 ```bash
 tmux new-session -d -s smoke-grpo
-tmux send-keys -t smoke-grpo "bash recipe/docvqa/scripts/run_smoke_grpo.sh" C-m
+tmux send-keys -t smoke-grpo "bash docvqa/scripts/run_smoke_grpo.sh" C-m
 ```
 
 - [ ] **Step 4: Watch metrics**

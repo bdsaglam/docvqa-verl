@@ -1,0 +1,6 @@
+{
+  "doc_id": "sample_doc",
+  "doc_category": "business_report",
+  "num_pages": 2,
+  "source_dataset": "test_fixture"
+}
