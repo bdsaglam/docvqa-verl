@@ -5,12 +5,13 @@
 #   1. The frozen 27B VLM is serving at $DOCVQA_VLM_BASE_URL (default
 #      http://localhost:8928). Bring it up in tmux session `vllm` on the
 #      GPU you've reserved for it.
-#   2. data/train/questions.json exists with the verl-compatible schema
-#      that prepare_data.py emits (prompt, data_source, reward_model,
-#      extra_info, plus our own question/doc_dir/category fields).
-#      RLHFDataset reads JSON natively. DocVQA-2026 has no public train
-#      split; train data prep is its own step (DocVQA-CC + DocVQA-1.0, etc.).
-#   3. data/val/questions.json exists (built by docvqa/scripts/prepare_data.py).
+#   2. Training/eval JSON files exist with the verl-compatible schema
+#      that prepare_data.py emits (record_id, prompt, data_source,
+#      reward_model, extra_info + our own question/doc_dir/category fields).
+#      RLHFDataset reads JSON natively and concatenates a list of files.
+#      DocVQA-2026 has no public train split; we train on the val split's
+#      train.json and use heldout.json (1 doc/category) for eval.
+#      Other DocVQA-family corpora can be appended to TRAIN_FILES later.
 #
 # Usage:
 #   bash docvqa/scripts/run_smoke_grpo.sh
@@ -25,25 +26,12 @@ export DOCVQA_VLM_BASE_URL=${DOCVQA_VLM_BASE_URL:-http://localhost:8928}
 export DOCVQA_VLM_MODEL_ID=${DOCVQA_VLM_MODEL_ID:-qwen3.6-27b}
 
 STUDENT_MODEL=${STUDENT_MODEL:-willcb/Qwen3-8B}
-TRAIN_FILE=${TRAIN_FILE:-data/train/questions_smoke200.json}
-VAL_FILE=${VAL_FILE:-data/val/questions.json}
+TRAIN_FILE=${TRAIN_FILE:-data/docvqa-2026/val/train.json}
+VAL_FILE=${VAL_FILE:-data/docvqa-2026/val/heldout.json}
 
-# Build a deterministic 200-question slice if it doesn't exist yet.
 if [[ ! -f "$TRAIN_FILE" ]]; then
-    if [[ ! -f data/train/questions.json ]]; then
-        echo "ERROR: data/train/questions.json missing. Build it first." >&2
-        echo "       (DocVQA-2026 has no public train split — see Phase 0 spec.)" >&2
-        exit 1
-    fi
-    python - <<PY
-import json, pathlib, random
-src = pathlib.Path("data/train/questions.json")
-dst = pathlib.Path("$TRAIN_FILE")
-qs = json.loads(src.read_text())
-random.Random(0).shuffle(qs)
-dst.write_text(json.dumps(qs[:200], indent=2))
-print(f"Wrote {dst} ({min(len(qs), 200)} questions)")
-PY
+    echo "ERROR: $TRAIN_FILE missing. Run docvqa/scripts/prepare_data.py first." >&2
+    exit 1
 fi
 
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1} python -m verl.trainer.main_ppo \

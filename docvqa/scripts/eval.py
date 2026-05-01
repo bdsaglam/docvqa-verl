@@ -6,7 +6,7 @@ and the running 27B VLM, computes per-question ANLS, and writes a JSON report.
 
 Usage:
     python docvqa/scripts/eval.py \\
-        --questions data/val/questions.json \\
+        --questions data/docvqa-2026/val/questions.json \\
         --student-base-url http://localhost:8000/v1 \\
         --student-model willcb/Qwen3-8B \\
         --vlm-base-url http://localhost:8928 \\
