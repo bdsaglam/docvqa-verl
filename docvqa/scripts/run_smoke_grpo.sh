@@ -5,10 +5,11 @@
 #   1. The frozen 27B VLM is serving at $DOCVQA_VLM_BASE_URL (default
 #      http://localhost:8928). Bring it up in tmux session `vllm` on the
 #      GPU you've reserved for it.
-#   2. data/train/questions.json (Parquet/JSON) exists with the expected
-#      columns: question_id, doc_id, question, answer, category, doc_dir.
-#      DocVQA-2026 has no public train split; train data prep is its own
-#      separate step (DocVQA-CC + DocVQA-1.0 train, etc.).
+#   2. data/train/questions.json exists with the verl-compatible schema
+#      that prepare_data.py emits (prompt, data_source, reward_model,
+#      extra_info, plus our own question/doc_dir/category fields).
+#      RLHFDataset reads JSON natively. DocVQA-2026 has no public train
+#      split; train data prep is its own step (DocVQA-CC + DocVQA-1.0, etc.).
 #   3. data/val/questions.json exists (built by docvqa/scripts/prepare_data.py).
 #
 # Usage:
