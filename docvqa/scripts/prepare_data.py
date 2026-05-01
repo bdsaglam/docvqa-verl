@@ -25,8 +25,9 @@ from typing import Any
 from PIL import Image
 from datasets import load_dataset
 
-# DocVQA pages can be very large scans; disable PIL's decompression-bomb check.
-Image.MAX_IMAGE_PIXELS = None
+# DocVQA test scans can exceed PIL's default ~178MP cap (some hit 246MP).
+# Match the convention in ~/repos/docvqa/ (solvers + scripts use 500_000_000).
+Image.MAX_IMAGE_PIXELS = 500_000_000
 
 
 SRC_DOCVQA_DATA = Path.home() / "repos" / "docvqa" / "data"
