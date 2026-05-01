@@ -46,11 +46,11 @@ fi
 TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-32}       # tiny for smoke
 PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-16}
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-16384}  # OCR previews push this up
-MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-32768}  # multi-turn aggregate
-PPO_MAX_TOKEN_LEN_PER_GPU=${PPO_MAX_TOKEN_LEN_PER_GPU:-49152}
+MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-16384}  # multi-turn aggregate; capped to keep actor-update activations within 80GB
+PPO_MAX_TOKEN_LEN_PER_GPU=${PPO_MAX_TOKEN_LEN_PER_GPU:-32768}  # must be >= max_prompt+max_response (16384+16384). Smaller cap halves peak activation memory in actor backward.
 
 ROLLOUT_TP=${ROLLOUT_TP:-2}
-ROLLOUT_GPU_MEM_UTIL=${ROLLOUT_GPU_MEM_UTIL:-0.6}
+ROLLOUT_GPU_MEM_UTIL=${ROLLOUT_GPU_MEM_UTIL:-0.45}  # leave more for FSDP grads/activations
 ROLLOUT_N=${ROLLOUT_N:-4}                      # GRPO group size
 
 ACTOR_LR=${ACTOR_LR:-3e-6}
@@ -90,8 +90,8 @@ ACTOR=(
     actor_rollout_ref.actor.kl_loss_coef=${KL_LOSS_COEF}
     actor_rollout_ref.actor.kl_loss_type=low_var_kl
     actor_rollout_ref.actor.entropy_coeff=${ENTROPY_COEFF}
-    actor_rollout_ref.actor.fsdp_config.param_offload=False
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=False
+    actor_rollout_ref.actor.fsdp_config.param_offload=True
+    actor_rollout_ref.actor.fsdp_config.optimizer_offload=True
 )
 
 ROLLOUT=(
@@ -107,6 +107,7 @@ ROLLOUT=(
     actor_rollout_ref.rollout.response_length=${MAX_RESPONSE_LENGTH}
     actor_rollout_ref.rollout.agent.agent_loop_config_path=docvqa/agent.yaml
     actor_rollout_ref.rollout.agent.default_agent_loop=docvqa_repl
+    actor_rollout_ref.rollout.multi_stage_wake_up=True  # gentler vLLM wake-up after actor update; default False crashes us
 )
 
 REF=(
