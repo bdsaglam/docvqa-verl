@@ -110,14 +110,29 @@ def _materialize_split(split: str, out_root: Path) -> None:
             # Test split has answers stubbed as the literal string "NULL".
             if gold == "NULL":
                 gold = None
+            data_source = f"docvqa-2026-{split}"
+            # Schema is shaped for both human inspection AND verl's RLHFDataset
+            # consumption (which reads JSON directly via datasets.load_dataset).
+            # `prompt` is a placeholder for the prompt-length filter — the agent
+            # loop builds the real prompt from `question`/`category`/`doc_dir`.
             questions.append({
                 "question_id": qid,
                 "doc_id": doc_id,
                 "question": qtext,
                 "answer": gold,
                 "category": category,
-                "source_dataset": f"docvqa-2026-{split}",
+                "source_dataset": data_source,
                 "doc_dir": str(doc_dir_abs),
+                # --- verl-required fields -------------------------------------
+                "prompt": [{"role": "user", "content": qtext}],
+                "data_source": data_source,
+                "reward_model": {"style": "rule", "ground_truth": gold or ""},
+                "extra_info": {
+                    "split": split,
+                    "category": category,
+                    "doc_id": doc_id,
+                    "question_id": qid,
+                },
             })
 
     out_questions = out_root / split / "questions.json"

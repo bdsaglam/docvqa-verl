@@ -98,9 +98,6 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         question_id = kwargs.get("question_id", "")
         doc_dir = kwargs["doc_dir"]
         category = kwargs.get("category", "unknown")
-        # gold_answer is read here purely for logging / future use;
-        # the reward function uses ground_truth from the dataset row.
-        _gold_answer = kwargs.get("gold_answer")
 
         meta = json.loads((Path(doc_dir) / "metadata.json").read_text())
         num_pages = meta["num_pages"]
