@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# Layer-4 smoke training: ~100 GRPO steps on a 200-question slice of train.
+# Phase-1 smoke training: ~100 GRPO steps on data/docvqa-2026/val/train.json.
 #
-# Prerequisites (NOT handled by this script):
-#   1. The frozen 27B VLM is serving at $DOCVQA_VLM_BASE_URL (default
-#      http://localhost:8928). Bring it up in tmux session `vllm` on the
-#      GPU you've reserved for it.
-#   2. Training/eval JSON files exist with the verl-compatible schema
-#      that prepare_data.py emits (record_id, prompt, data_source,
-#      reward_model, extra_info + our own question/doc_dir/category fields).
-#      RLHFDataset reads JSON natively and concatenates a list of files.
-#      DocVQA-2026 has no public train split; we train on the val split's
-#      train.json and use heldout.json (1 doc/category) for eval.
-#      Other DocVQA-family corpora can be appended to TRAIN_FILES later.
+# Verl spins up its own student vLLM internally for rollouts. The ONLY
+# external prerequisite is the frozen 27B VLM at $DOCVQA_VLM_BASE_URL
+# (default http://localhost:8928), which the agent's batch_look() tool
+# hits via HTTP. Bring it up in tmux session `vllm` on the GPU reserved
+# for it before running this script.
+#
+# Data: prepare_data.py must have been run already (RLHFDataset reads the
+# emitted JSON files natively; multiple files are concatenated).
+#
+# trainer.val_before_train=True (verl default) gives a Layer-3 baseline at
+# step 0, before any gradient update. Set trainer.val_only=true to skip
+# training entirely and just emit baseline eval.
 #
 # Usage:
-#   bash docvqa/scripts/run_smoke_grpo.sh
-#   bash docvqa/scripts/run_smoke_grpo.sh trainer.total_epochs=2  # extra overrides
+#   bash docvqa/scripts/run_smoke_grpo.sh                        # smoke training
+#   bash docvqa/scripts/run_smoke_grpo.sh trainer.val_only=true  # baseline eval only
 
 set -euo pipefail
 
