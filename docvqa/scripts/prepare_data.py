@@ -9,8 +9,10 @@ Layout:
         docs/<doc_id>/
             metadata.json
             pages/page_*.png
-            ocr/page_*.md
-            bm25/...
+
+The ``rvlm_minimal_solver`` scaffold we mirror only consumes page images
+(``pages``); the older OCR/BM25 sidecar dirs were removed when the scaffold
+dropped the ``search`` tool.
 
 Each row in *.json carries a globally unique
     record_id = "<dataset>:<original_split>:<doc_id>:<question_id>"
@@ -29,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -40,10 +41,6 @@ from datasets import load_dataset
 # DocVQA test scans can exceed PIL's default ~178MP cap (some hit 246MP).
 # Match the convention in ~/repos/docvqa/ (solvers + scripts use 500_000_000).
 Image.MAX_IMAGE_PIXELS = 500_000_000
-
-
-# Source for pre-computed OCR markdown + BM25 indexes (DocVQA-2026 only).
-SRC_DOCVQA_DATA = Path.home() / "repos" / "docvqa" / "data"
 
 
 # ---------------------------------------------------------------------------
@@ -144,28 +141,7 @@ def _materialize_docvqa_2026_doc(row: Any, split: str, docs_dir: Path) -> None:
     category = row.get("doc_category", "unknown")
     doc_out = docs_dir / doc_id
     pages_dir = doc_out / "pages"
-    ocr_dir = doc_out / "ocr"
-    bm25_dir = doc_out / "bm25"
     pages_dir.mkdir(parents=True, exist_ok=True)
-    ocr_dir.mkdir(exist_ok=True)
-    bm25_dir.mkdir(exist_ok=True)
-
-    src_split = SRC_DOCVQA_DATA / split
-    src_ocr = src_split / "ocr" / doc_id
-    src_bm25 = src_split / "bm25" / doc_id
-
-    if src_ocr.exists():
-        for p in src_ocr.iterdir():
-            if p.is_file() and p.name != "metadata.json":
-                dst = ocr_dir / p.name
-                if not dst.exists():
-                    shutil.copy(p, dst)
-    if src_bm25.exists():
-        for p in src_bm25.iterdir():
-            if p.is_file():
-                dst = bm25_dir / p.name
-                if not dst.exists():
-                    shutil.copy(p, dst)
 
     images = row.get("document") or []
     for i, img in enumerate(images):
@@ -175,14 +151,13 @@ def _materialize_docvqa_2026_doc(row: Any, split: str, docs_dir: Path) -> None:
         if isinstance(img, Image.Image):
             img.save(out_path, format="PNG")
 
-    src_meta_path = src_ocr / "metadata.json"
-    if src_meta_path.exists():
-        meta = json.loads(src_meta_path.read_text())
-    else:
-        meta = {"doc_id": doc_id, "num_pages": len(images)}
-    meta["doc_category"] = category
-    meta["dataset"] = "docvqa-2026"
-    meta["split"] = split
+    meta = {
+        "doc_id": doc_id,
+        "num_pages": len(images),
+        "doc_category": category,
+        "dataset": "docvqa-2026",
+        "split": split,
+    }
     (doc_out / "metadata.json").write_text(json.dumps(meta, indent=2))
 
 

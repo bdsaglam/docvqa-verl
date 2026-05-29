@@ -1,12 +1,18 @@
 """DocVQA REPL agent loop for verl.
 
-Replicates the deployed `flat_solo` scaffold: persistent CPython subprocess
-with batch_look/search/SUBMIT, model emits <think>...</think> + a single
-```python ... ``` fence per turn, ANLS reward end-of-trajectory.
+Replicates the deployed ``rvlm_minimal_solver`` scaffold (formerly ``flat_solo``):
+persistent CPython subprocess with ``batch_look`` and ``SUBMIT``, model emits
+``<think>...</think>`` + a single ``` ```python ... ``` `` fence per turn, ANLS
+reward end-of-trajectory.
 
-The agent loop is fully implemented: per-turn generation, code parsing,
-subprocess execution, observation appending, SUBMIT termination, and
-parse-error / iter-cap / token-cap fallbacks.
+Per-turn flow: generation → code parsing → subprocess execution → observation
+appending → SUBMIT termination, with parse-error / iter-cap / token-cap
+fallbacks.
+
+Tool surface is intentionally narrow — just ``batch_look`` plus ``SUBMIT``.
+Earlier revisions also wired a BM25 ``search`` over OCR; the deployment-time
+scaffold dropped it (recursive VLM perception is the load-bearing mechanism)
+and we follow suit so train-time and deploy-time behavior stay aligned.
 """
 from __future__ import annotations
 
@@ -101,17 +107,11 @@ class DocVQAReplAgentLoop(AgentLoopBase):
 
         meta = json.loads((Path(doc_dir) / "metadata.json").read_text())
         num_pages = meta["num_pages"]
-        page_texts = [
-            p.read_text() for p in sorted(
-                (Path(doc_dir) / "ocr").glob("page_*.md"),
-                key=lambda p: int(p.stem.split("_")[1]),
-            )
-        ]
 
         max_iter = _adaptive_max_iter(num_pages, self._knobs)
 
         sys_prompt = build_system_prompt(category)
-        first_user = build_first_user_message(question, category, num_pages, page_texts)
+        first_user = build_first_user_message(question, category, num_pages)
         messages: list[dict] = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": first_user},
@@ -131,7 +131,6 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         submitted_answer: str | None = None
         num_turns = 0
         vlm_calls = 0
-        search_calls = 0
         parse_error_strikes = 0
 
         try:
@@ -146,12 +145,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     _batch_look_host(requests), self.loop,
                 ).result(timeout=300)
 
-            def _search_sync(query: str, k: int = 5):
-                return host_tools.search(doc_dir, query, k)
-
             interp = SubprocessInterpreter(
                 sandbox_code=build_sandbox_code(),
-                tools={"batch_look": _batch_look_sync, "search": _search_sync},
+                tools={"batch_look": _batch_look_sync},
                 output_fields=[{"name": "answer", "type": "str"}],
                 timeout=self._knobs["subprocess_timeout_s"],
                 extra_env={"DOC_DIR": doc_dir},
@@ -235,8 +231,6 @@ class DocVQAReplAgentLoop(AgentLoopBase):
 
                     if "batch_look(" in code:
                         vlm_calls += code.count("batch_look(")
-                    if "search(" in code:
-                        search_calls += code.count("search(")
 
                     observation = self._truncate(observation)
 
@@ -274,7 +268,6 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 "submitted_answer": submitted_answer,
                 "num_turns": num_turns,
                 "vlm_calls": vlm_calls,
-                "search_calls": search_calls,
                 "wall_clock_s": time.monotonic() - wall_start,
                 "doc_id": meta["doc_id"],
                 "question_id": question_id,

@@ -45,7 +45,7 @@ fi
 # ---- batch / context sizes -------------------------------------------------
 TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-32}       # tiny for smoke
 PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-16}
-MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-16384}  # OCR previews push this up
+MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-16384}  # generous headroom for the rvlm_minimal system + first-user prompt
 MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-16384}  # multi-turn aggregate; capped to keep actor-update activations within 80GB
 PPO_MAX_TOKEN_LEN_PER_GPU=${PPO_MAX_TOKEN_LEN_PER_GPU:-32768}  # must be >= max_prompt+max_response (16384+16384). Smaller cap halves peak activation memory in actor backward.
 

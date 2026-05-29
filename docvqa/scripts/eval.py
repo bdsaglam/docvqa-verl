@@ -150,7 +150,6 @@ async def _solve(loop: DocVQAReplAgentLoop, q: dict) -> dict[str, Any]:
         "termination": out.extra_fields.get("termination"),
         "num_turns": out.extra_fields.get("num_turns"),
         "vlm_calls": out.extra_fields.get("vlm_calls"),
-        "search_calls": out.extra_fields.get("search_calls"),
         "wall_clock_s": out.extra_fields.get("wall_clock_s",
                                               time.monotonic() - t0),
     }

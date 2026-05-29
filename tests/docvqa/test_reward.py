@@ -71,7 +71,7 @@ def test_compute_score_passes_through_metadata():
         ground_truth="42",
         extra_info={
             "submitted_answer": "42", "termination": "submit",
-            "num_turns": 5, "vlm_calls": 2, "search_calls": 1,
+            "num_turns": 5, "vlm_calls": 2,
             "messages": [{"role": "system", "content": "..."}],  # filtered out
             "doc_id": "doc1", "question_id": "q1",
         },
@@ -82,3 +82,5 @@ def test_compute_score_passes_through_metadata():
     assert "doc_id" not in info
     assert "submitted_answer" not in info
     assert "messages" not in info
+    # search/search_calls no longer flow through anywhere.
+    assert "search_calls" not in info

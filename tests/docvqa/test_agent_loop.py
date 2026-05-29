@@ -103,7 +103,7 @@ def test_agent_loop_uses_overrides(tokenizer):
 @pytest.mark.asyncio
 async def test_run_iter_cap_with_no_submit(tokenizer, sample_doc_dir):
     """Model emits a print but never SUBMITs; loop hits iter cap."""
-    text = "<think>Let me check.</think>\n\n```python\nprint(page_texts[0][:50])\n```"
+    text = "<think>Let me check.</think>\n\n```python\nprint(pages[0].size)\n```"
     assistant_ids = tokenizer.encode(text + "<|im_end|>", add_special_tokens=False)
     scripted = [assistant_ids] * 50
 

@@ -19,7 +19,6 @@ _NUMERIC_PASSTHROUGH: dict[str, float | int] = {
     # string column would crash validation aggregation.
     "num_turns": 0,
     "vlm_calls": 0,
-    "search_calls": 0,
     "wall_clock_s": 0.0,
 }
 """Numeric keys we propagate into reward_extra_info.
