@@ -1,0 +1,5 @@
+# docvqa/agent.yaml
+# verl agent loop registration. See verl/experimental/agent_loop/agent_loop.py
+# for how `agent_loop_config_path` is consumed by AgentLoopWorker.
+- name: docvqa_repl
+  _target_: docvqa.agent_loop.DocVQAReplAgentLoop
