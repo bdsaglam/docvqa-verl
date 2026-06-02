@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -276,14 +278,23 @@ def adapter_mmlongbench_doc(split: str, split_dir: Path) -> list[dict]:
         by_doc[r["doc_id"]].append(r)
 
     all_rows: list[dict] = []
+    failed: list[str] = []
     for doc_id, hf_rows in by_doc.items():
         # Absolute path, consistent with adapter_docvqa_2026 — a relative
         # doc_dir would break the agent loop when train/rollout runs from
         # another CWD.
         doc_dir = (docs_dir / doc_id).resolve()
-        pdf_path = Path(hf_hub_download(_MMLB_REPO, f"documents/{doc_id}",
-                                        repo_type="dataset"))
-        num_pages = _mmlb_render_pdf(pdf_path, doc_dir / "pages")
+        try:
+            pdf_path = Path(hf_hub_download(_MMLB_REPO, f"documents/{doc_id}",
+                                            repo_type="dataset"))
+            num_pages = _mmlb_render_pdf(pdf_path, doc_dir / "pages")
+        except Exception as e:
+            # One bad remote PDF (corrupt download, render error) must not abort
+            # the whole corpus. Drop the partial dir, skip the doc, keep going.
+            print(f"[mmlb] SKIP {doc_id}: {type(e).__name__}: {e}", file=sys.stderr)
+            shutil.rmtree(doc_dir, ignore_errors=True)
+            failed.append(doc_id)
+            continue
         (doc_dir / "metadata.json").write_text(json.dumps({
             "doc_id": doc_id,
             "num_pages": num_pages,
@@ -292,6 +303,9 @@ def adapter_mmlongbench_doc(split: str, split_dir: Path) -> list[dict]:
             "split": split,
         }))
         all_rows.extend(_mmlb_rows_for_doc(split, hf_rows, doc_dir))
+    if failed:
+        print(f"[mmlb] skipped {len(failed)} docs that failed to "
+              f"download/render: {failed}", file=sys.stderr)
     return all_rows
 
 
