@@ -19,9 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import statistics
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +29,6 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from docvqa.agent_loop import DocVQAReplAgentLoop  # noqa: E402
-from docvqa.metrics import evaluate_prediction  # noqa: E402
 
 
 # --- vLLM-backed server_manager ---------------------------------------------
@@ -61,8 +58,11 @@ class _OpenAIClientServerManager:
                     "model": self._model,
                     "prompt": prompt_text,
                     "max_tokens": sampling_params.get("max_tokens", 4096),
-                    "temperature": sampling_params.get("temperature", 1.0),
+                    "temperature": sampling_params.get("temperature", 0.6),
                     "top_p": sampling_params.get("top_p", 0.95),
+                    # vLLM's OpenAI /completions accepts top_k as a top-level
+                    # sampling-param extension (not in the OpenAI spec proper).
+                    "top_k": sampling_params.get("top_k", 20),
                     "stop": sampling_params.get("stop", ["<|im_end|>"]),
                 },
             )
@@ -123,35 +123,33 @@ def _build_loop(student_base_url: str, student_model: str,
     )
 
 
-async def _solve(loop: DocVQAReplAgentLoop, q: dict) -> dict[str, Any]:
-    t0 = time.monotonic()
-    out = await loop.run(
-        sampling_params={"temperature": 1.0, "top_p": 0.95},
-        question_id=q["question_id"],
-        question=q["question"],
-        doc_dir=q["doc_dir"],
-        gold_answer=q.get("answer"),
-        category=q.get("category", "unknown"),
-    )
-    submitted = out.extra_fields.get("submitted_answer")
-    gold = q.get("answer")
-    if submitted is None or gold is None:
-        anls = 0.0
-    else:
-        is_correct, _ = evaluate_prediction(submitted, gold)
-        anls = 1.0 if is_correct else 0.0
+async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
+                   sampling: dict) -> dict[str, Any]:
+    """Run n rollouts for one question; return raw submitted answers + meta."""
+    submitted: list[str | None] = []
+    terminations: list[str | None] = []
+    turns: list[int] = []
+    for _ in range(n):
+        try:
+            out = await loop.run(
+                sampling_params=sampling,
+                question_id=q["question_id"], question=q["question"],
+                doc_dir=q["doc_dir"], gold_answer=q.get("answer"),
+                category=q.get("category", "unknown"),
+            )
+            submitted.append(out.extra_fields.get("submitted_answer"))
+            terminations.append(out.extra_fields.get("termination"))
+            turns.append(out.extra_fields.get("num_turns") or 0)
+        except Exception as e:
+            submitted.append(None)
+            terminations.append(f"error:{e!r}")
+            turns.append(0)
     return {
-        "question_id": q["question_id"],
-        "doc_id": q["doc_id"],
+        "question_id": q["question_id"], "doc_id": q.get("doc_id"),
         "category": q.get("category", "unknown"),
-        "submitted_answer": submitted,
-        "gold_answer": gold,
-        "anls": anls,
-        "termination": out.extra_fields.get("termination"),
-        "num_turns": out.extra_fields.get("num_turns"),
-        "vlm_calls": out.extra_fields.get("vlm_calls"),
-        "wall_clock_s": out.extra_fields.get("wall_clock_s",
-                                              time.monotonic() - t0),
+        "gold_answer": q.get("answer"),
+        "submitted_answers": submitted,
+        "terminations": terminations, "num_turns": turns,
     }
 
 
@@ -165,23 +163,19 @@ async def _main_async(args) -> None:
         args.vlm_base_url, args.vlm_model,
     )
 
+    import statistics
+    from docvqa.eval_metrics import aggregate_question
+
+    sampling = {"temperature": args.temperature, "top_p": args.top_p,
+                "top_k": args.top_k}
     sem = asyncio.Semaphore(args.concurrency)
 
     async def _bound(q: dict) -> dict[str, Any]:
         async with sem:
-            try:
-                return await _solve(loop_obj, q)
-            except Exception as e:
-                return {
-                    "question_id": q["question_id"],
-                    "doc_id": q.get("doc_id"),
-                    "category": q.get("category", "unknown"),
-                    "submitted_answer": None,
-                    "gold_answer": q.get("answer"),
-                    "anls": 0.0,
-                    "termination": "error",
-                    "error": repr(e),
-                }
+            raw = await _solve_n(loop_obj, q, args.n, sampling)
+        agg = aggregate_question(raw["submitted_answers"], raw["gold_answer"])
+        return {**raw, **{k: agg[k] for k in ("mean", "passk", "sc", "scores",
+                                              "voted_answer")}}
 
     results = await asyncio.gather(*(_bound(q) for q in questions))
 
@@ -189,15 +183,23 @@ async def _main_async(args) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False))
 
-    by_cat: dict[str, list[float]] = {}
-    for r in results:
-        by_cat.setdefault(r.get("category", "unknown"), []).append(r["anls"])
+    def _overall(key: str) -> float:
+        return statistics.mean(r[key] for r in results) if results else 0.0
 
-    print("=== ANLS report ===")
-    print(f"  overall: {statistics.mean(r['anls'] for r in results):.4f}  "
-          f"(n={len(results)})")
-    for cat, scores in sorted(by_cat.items()):
-        print(f"  {cat:20s}: {statistics.mean(scores):.4f}  (n={len(scores)})")
+    by_cat: dict[str, list[dict]] = {}
+    for r in results:
+        by_cat.setdefault(r["category"], []).append(r)
+
+    print(f"=== DocVQA-2026 eval (n={args.n}, model={args.student_model}) ===")
+    means = [r["mean"] for r in results]
+    print(f"  mean ANLS : {statistics.mean(means):.4f} "
+          f"± {statistics.pstdev(means):.4f}  (n_q={len(results)})")
+    print(f"  pass@{args.n}  : {_overall('passk'):.4f}")
+    print(f"  SC-{args.n}    : {_overall('sc'):.4f}")
+    for cat, rows in sorted(by_cat.items()):
+        m = statistics.mean(r["mean"] for r in rows)
+        print(f"    {cat:20s} mean={m:.4f} pass={statistics.mean(r['passk'] for r in rows):.4f} "
+              f"sc={statistics.mean(r['sc'] for r in rows):.4f} (n_q={len(rows)})")
     print(f"  -> {out_path}")
 
 
@@ -210,6 +212,10 @@ def main() -> None:
     ap.add_argument("--vlm-model", default="Qwen/Qwen3.5-27B")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--n", type=int, default=8, help="rollouts per question")
+    ap.add_argument("--temperature", type=float, default=0.6)
+    ap.add_argument("--top-p", type=float, default=0.95)
+    ap.add_argument("--top-k", type=int, default=20)
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
     asyncio.run(_main_async(args))
