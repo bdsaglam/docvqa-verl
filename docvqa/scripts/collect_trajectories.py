@@ -28,10 +28,10 @@ Use cases:
 Example (teacher rollouts, 4 samples per question):
     python docvqa/scripts/collect_trajectories.py \\
         --questions data/docvqa-2026/val/train.json \\
-        --lm-base-url http://localhost:8928/v1 \\
-        --lm-model Qwen/Qwen3.6-27B \\
-        --vlm-base-url http://localhost:8928 \\
-        --vlm-model Qwen/Qwen3.6-27B \\
+        --lm-base-url http://localhost:8927/v1 \\
+        --lm-model Qwen/Qwen3.5-27B \\
+        --vlm-base-url http://localhost:8927 \\
+        --vlm-model Qwen/Qwen3.5-27B \\
         --num-samples-per-q 4 \\
         --temperature 1.0 \\
         --concurrency 4 \\
@@ -192,12 +192,12 @@ def main() -> None:
     ap.add_argument("--lm-base-url", default="http://localhost:8928/v1",
                     help="OpenAI-compatible base URL for the agent's LM "
                          "(use the 27B for teacher rollouts, the 8B for student).")
-    ap.add_argument("--lm-model", default="Qwen/Qwen3.6-27B",
+    ap.add_argument("--lm-model", default="Qwen/Qwen3.5-27B",
                     help="Model id served at --lm-base-url.")
     ap.add_argument("--vlm-base-url", default="http://localhost:8928",
                     help="Base URL for the VLM tool (batch_look). "
                          "Same endpoint as the teacher's LM works.")
-    ap.add_argument("--vlm-model", default="Qwen/Qwen3.6-27B")
+    ap.add_argument("--vlm-model", default="Qwen/Qwen3.5-27B")
     ap.add_argument("--num-samples-per-q", type=int, default=4,
                     help="How many rollouts to sample per question.")
     ap.add_argument("--temperature", type=float, default=1.0)

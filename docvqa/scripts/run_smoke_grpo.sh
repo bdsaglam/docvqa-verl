@@ -22,7 +22,7 @@ cd "$(dirname "$0")/../.."
 
 # ---- external services -----------------------------------------------------
 export DOCVQA_VLM_BASE_URL=${DOCVQA_VLM_BASE_URL:-http://localhost:8928}
-export DOCVQA_VLM_MODEL_ID=${DOCVQA_VLM_MODEL_ID:-Qwen/Qwen3.6-27B}
+export DOCVQA_VLM_MODEL_ID=${DOCVQA_VLM_MODEL_ID:-Qwen/Qwen3.5-27B}
 
 # ---- compute layout --------------------------------------------------------
 NNODES=${NNODES:-1}
@@ -30,7 +30,7 @@ NGPUS_PER_NODE=${NGPUS_PER_NODE:-2}            # GPUs 0,1 for student; GPU 2 hol
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1}
 
 # ---- model / LoRA ----------------------------------------------------------
-MODEL_PATH=${MODEL_PATH:-willcb/Qwen3-8B}
+MODEL_PATH=${MODEL_PATH:-Qwen/Qwen3.5-4B}
 LORA_RANK=${LORA_RANK:-64}
 LORA_ALPHA=${LORA_ALPHA:-32}
 

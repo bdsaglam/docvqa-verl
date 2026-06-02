@@ -1,9 +1,14 @@
-"""DocVQA REPL agent loop for verl.
+"""DocVQA CodeAct REPL agent loop for verl.
 
-Replicates the deployed ``rvlm_minimal_solver`` scaffold (formerly ``flat_solo``):
-persistent CPython subprocess with ``batch_look`` and ``SUBMIT``, model emits
-``<think>...</think>`` + a single ``` ```python ... ``` `` fence per turn, ANLS
-reward end-of-trajectory.
+Implements the **CodeAct** scaffold: a strictly append-only transcript in
+which the model emits ``<think>...</think>`` + a single ``` ```python ... ``` ``
+fence per turn, the code runs in a persistent CPython subprocess with
+``batch_look`` (27B VLM perception) + ``SUBMIT``, and the captured stdout is
+appended verbatim as the next ``user`` turn. The full message list grows
+monotonically (an MDP, fully observable) — this is the property RL / SFT /
+distillation losses assume. Contrast the deployed ``rvlm`` solver, which uses
+LeanRLM's hidden REPL namespace + ``RESET_HISTORY`` (a POMDP) and is *not* a
+fine-tuning target. ANLS reward end-of-trajectory.
 
 Per-turn flow: generation → code parsing → subprocess execution → observation
 appending → SUBMIT termination, with parse-error / iter-cap / token-cap
@@ -90,7 +95,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         self._vlm_model_id: str = (
             agent_cfg.get("vlm_model_id")
             or os.environ.get("DOCVQA_VLM_MODEL_ID")
-            or "qwen3.6-27b"
+            or "Qwen/Qwen3.5-27B"
         )
 
         self._response_length_cap: int = self.rollout_config.response_length

@@ -8,9 +8,9 @@ Usage:
     python docvqa/scripts/eval.py \\
         --questions data/docvqa-2026/val/questions.json \\
         --student-base-url http://localhost:8000/v1 \\
-        --student-model willcb/Qwen3-8B \\
-        --vlm-base-url http://localhost:8928 \\
-        --vlm-model qwen3.6-27b \\
+        --student-model Qwen/Qwen3.5-4B \\
+        --vlm-base-url http://localhost:8927 \\
+        --vlm-model Qwen/Qwen3.5-27B \\
         --concurrency 4 \\
         --output outputs/eval/val_qwen3_8b_layer3.json
 """
@@ -205,9 +205,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--questions", required=True)
     ap.add_argument("--student-base-url", default="http://localhost:8000/v1")
-    ap.add_argument("--student-model", default="willcb/Qwen3-8B")
-    ap.add_argument("--vlm-base-url", default="http://localhost:8928")
-    ap.add_argument("--vlm-model", default="qwen3.6-27b")
+    ap.add_argument("--student-model", default="Qwen/Qwen3.5-4B")
+    ap.add_argument("--vlm-base-url", default="http://localhost:8927")
+    ap.add_argument("--vlm-model", default="Qwen/Qwen3.5-27B")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--output", required=True)
