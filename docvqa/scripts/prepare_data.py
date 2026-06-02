@@ -277,7 +277,10 @@ def adapter_mmlongbench_doc(split: str, split_dir: Path) -> list[dict]:
 
     all_rows: list[dict] = []
     for doc_id, hf_rows in by_doc.items():
-        doc_dir = docs_dir / doc_id
+        # Absolute path, consistent with adapter_docvqa_2026 — a relative
+        # doc_dir would break the agent loop when train/rollout runs from
+        # another CWD.
+        doc_dir = (docs_dir / doc_id).resolve()
         pdf_path = Path(hf_hub_download(_MMLB_REPO, f"documents/{doc_id}",
                                         repo_type="dataset"))
         num_pages = _mmlb_render_pdf(pdf_path, doc_dir / "pages")
