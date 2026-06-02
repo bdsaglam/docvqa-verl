@@ -201,11 +201,104 @@ def adapter_docvqa_2026(split: str, split_dir: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: mmlongbench-doc (yubo2333/MMLongBench-Doc)
+# ---------------------------------------------------------------------------
+
+_MMLB_REPO = "yubo2333/MMLongBench-Doc"
+_MMLB_DPI = 150
+_MMLB_MAX_PAGES = 80
+
+
+def _mmlb_question_id(doc_id: str, idx: int) -> str:
+    return f"{doc_id}::q{idx}"
+
+
+def _mmlb_rows_for_doc(split: str, hf_rows: list[dict], doc_dir: Path) -> list[dict]:
+    """Build canonical question rows for one MMLongBench doc (no I/O).
+
+    Note: ``answer == "Not answerable"`` is REAL gold for this dataset, not a
+    sentinel, so it is passed through unchanged (unlike DocVQA-2026's "NULL").
+    """
+    rows = []
+    for i, r in enumerate(hf_rows):
+        rows.append(_build_row(
+            dataset="mmlongbench-doc",
+            split=split,
+            doc_id=r["doc_id"],
+            question_id=_mmlb_question_id(r["doc_id"], i),
+            question=r["question"],
+            answer=r["answer"],
+            category=r["doc_type"],
+            doc_dir_abs=doc_dir,
+        ))
+    return rows
+
+
+def _mmlb_render_pdf(pdf_path: Path, out_dir: Path) -> int:
+    """Render PDF pages to out_dir/page_<i>.png (idempotent). Returns page count."""
+    import pypdfium2 as pdfium
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pdf = pdfium.PdfDocument(str(pdf_path))
+    n_total = len(pdf)
+    n_render = min(n_total, _MMLB_MAX_PAGES)
+    scale = _MMLB_DPI / 72.0
+    for i in range(n_render):
+        png = out_dir / f"page_{i}.png"
+        if png.exists():
+            continue
+        img = pdf[i].render(scale=scale).to_pil()
+        img.save(png, format="PNG", optimize=True)
+    pdf.close()
+    return n_render
+
+
+def adapter_mmlongbench_doc(split: str, split_dir: Path) -> list[dict]:
+    """Build docs/ and return raw rows for yubo2333/MMLongBench-Doc.
+
+    The dataset has a single ``train`` split (~1091 Q / 135 docs). PDFs are
+    fetched from the HF dataset repo's ``documents/`` dir and rendered locally.
+    """
+    from huggingface_hub import hf_hub_download
+
+    docs_dir = split_dir / "docs"
+
+    exclude: set[str] = set()
+    exclude_file = split_dir.parent / "exclude_doc_ids.txt"
+    if exclude_file.exists():
+        exclude = {ln.strip() for ln in exclude_file.read_text().splitlines() if ln.strip()}
+
+    ds = load_dataset(_MMLB_REPO, split="train")
+    by_doc: dict[str, list[dict]] = defaultdict(list)
+    for r in ds:
+        if r["doc_id"] in exclude:
+            continue
+        by_doc[r["doc_id"]].append(r)
+
+    all_rows: list[dict] = []
+    for doc_id, hf_rows in by_doc.items():
+        doc_dir = docs_dir / doc_id
+        pdf_path = Path(hf_hub_download(_MMLB_REPO, f"documents/{doc_id}",
+                                        repo_type="dataset"))
+        num_pages = _mmlb_render_pdf(pdf_path, doc_dir / "pages")
+        (doc_dir / "metadata.json").write_text(json.dumps({
+            "doc_id": doc_id,
+            "num_pages": num_pages,
+            "doc_category": hf_rows[0]["doc_type"],
+            "dataset": "mmlongbench-doc",
+            "split": split,
+        }))
+        all_rows.extend(_mmlb_rows_for_doc(split, hf_rows, doc_dir))
+    return all_rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
 ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "docvqa-2026": adapter_docvqa_2026,
+    "mmlongbench-doc": adapter_mmlongbench_doc,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "mp-docvqa": adapter_mp_docvqa,
