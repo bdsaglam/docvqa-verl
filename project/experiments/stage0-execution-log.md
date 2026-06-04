@@ -103,3 +103,35 @@ Teacher ceiling (docvqa dspy CodeAct-27B): ~0.375 binary-ANLS. Student floor
 **Blocked on:** the eval finishing (frees :8927 for fast collection + a GPU for
 training). Until then: trickle-collect + GPU-free prep only. Both critical-path
 activities (collect, train) need resources the eval currently holds.
+
+**De-risking win — fixed a real training crash on CPU (no GPU spent):**
+- `MultiTurnSFTDataset` tokenizes each turn separately. Our trajectories begin
+  with a `system` turn (agent_loop.py:121). The Qwen3.5 chat template needs a
+  user message, and verl's fallback PREPENDED a dummy user → `[user, system]` →
+  TemplateError "System message must be at the beginning". This would have
+  crashed SeqKD on the first batch.
+- Fixed `verl/utils/chat_template.py`: for a leading-system, user-less message,
+  APPEND the dummy user as a suffix and strip it (preserves the system turn's
+  exact tokens). Commit 58ebff21.
+- Validated on CPU: system-led CodeAct trajectory loads; **loss mask is
+  assistant-only** (reasoning + ```python``` + SUBMIT; excludes system / user /
+  observation). `ignore_input_ids_mismatch=True` is required (confirmed it
+  raises without it). Regression test `tests/docvqa/test_sft_mask.py`; full
+  docvqa suite **58 passing** (needed `pytest-asyncio` for the 6 async
+  agent-loop tests — installed in .venv).
+
+**Throughput reality (measured):** with the eval saturating :8927, a single
+CodeAct-27B rollout did not complete in 30+ min at concurrency 3 (process alive,
+ESTABLISHED sockets to :8927 — crawling, not hung). Our rollouts are heavy (27B
+as LM doing long reasoning × up to 30 turns + 27B VLM calls), far heavier than
+the eval's (9B LM). Implication: collection is **not viable at useful rates
+until the eval releases :8927**. Plan: keep the resumable trickle (captures any
+completions, self-heals), and let the monitor ramp to concurrency 8 the moment
+`eval-9b` ends. After the eval, a freed GPU runs the SeqKD probe.
+
+**Ready-to-fire state (everything GPU-free is done):** data prepped + leakage
+clean; collect→make_sft_data→train pipeline wired + the training crash fixed and
+mask validated; `docvqa/train/run_seqkd.sh` + README; Qwen3.5-4B cached; monitor
+cron `e096cb9b` will ramp collection and launch the probe when resources free.
+The remaining critical path (collect → train → eval) is gated purely on the eval
+finishing.
