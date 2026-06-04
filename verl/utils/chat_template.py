@@ -101,18 +101,35 @@ def apply_chat_template(
             **kwargs,
         )
     except Exception:
-        # Qwen3.5 apply_chat_template needs messages with at least one user message
+        # Templates like Qwen3.5 require at least one user message. We inject a
+        # dummy user turn, render, and strip it back out.
+        #
+        # Normally the dummy user is PREPENDED and the prefix stripped. But a
+        # *leading system* message (e.g. a per-turn tokenization of the system
+        # prompt in MultiTurnSFTDataset) cannot have a user prepended — the
+        # template raises "System message must be at the beginning". For that
+        # case we APPEND the dummy user as a suffix and strip the suffix, which
+        # preserves the system turn's exact token sequence. The user block is
+        # rendered context-independently, so the suffix equals the dummy user
+        # rendered alone.
         dummy_user_message = [{"role": "user", "content": [{"type": "text", "text": ""}]}]
-        dummy_user_prefix = processor.apply_chat_template(
+        lead_system = (
+            bool(messages)
+            and messages[0].get("role") == "system"
+            and not any(m.get("role") == "user" for m in messages)
+        )
+
+        dummy_part = processor.apply_chat_template(
             dummy_user_message,
             tokenize=tokenize,
-            add_generation_prompt=False,
+            add_generation_prompt=(add_generation_prompt if lead_system else False),
             tools=tools,
             return_dict=return_dict,
             **kwargs,
         )
+        combined = (list(messages) + dummy_user_message) if lead_system else (dummy_user_message + list(messages))
         output = processor.apply_chat_template(
-            dummy_user_message + messages,
+            combined,
             tokenize=tokenize,
             add_generation_prompt=add_generation_prompt,
             tools=tools,
@@ -120,20 +137,28 @@ def apply_chat_template(
             **kwargs,
         )
 
-        if not tokenize:  # tokenize=False
-            return output[len(dummy_user_prefix) :]
+        def _strip(out, part):
+            # lead_system -> drop `part` tokens from the END; else from the START.
+            return out[: len(out) - len(part)] if lead_system else out[len(part) :]
+
+        if not tokenize:  # tokenize=False (strings)
+            return _strip(output, dummy_part)
         elif not return_dict:  # tokenize=True and return_dict=False
             if isinstance(output[0], list):  # transformers>=5
                 assert len(output) == 1, "output must be a list[int] or list[list[int]]"
-                dummy_user_prefix = dummy_user_prefix[0]
+                dummy_part = dummy_part[0]
                 output = output[0]
-            return output[len(dummy_user_prefix) :]
+            return _strip(output, dummy_part)
         else:  # tokenize=True and return_dict=True and return_tensors="pt"
-            dummy_user_prefix = dict(dummy_user_prefix)
+            dummy_part = dict(dummy_part)
             output = dict(output)
-            prefix_len = dummy_user_prefix["input_ids"].shape[1]
-            output["input_ids"] = output["input_ids"][:, prefix_len:]
-            output["attention_mask"] = output["attention_mask"][:, prefix_len:]
+            part_len = dummy_part["input_ids"].shape[1]
+
+            def _slice(t):
+                return t[:, : t.shape[1] - part_len] if lead_system else t[:, part_len:]
+
+            output["input_ids"] = _slice(output["input_ids"])
+            output["attention_mask"] = _slice(output["attention_mask"])
             if "mm_token_type_ids" in output:
-                output["mm_token_type_ids"] = output["mm_token_type_ids"][:, prefix_len:]
+                output["mm_token_type_ids"] = _slice(output["mm_token_type_ids"])
             return output
