@@ -157,10 +157,15 @@ async def _main_async(args) -> None:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         return r
 
+    # Sample-major order: do sample 0 of every question before sample 1, etc.
+    # This maximizes UNIQUE-question coverage early (one pass touches all
+    # questions) instead of burning N redundant samples on the first few
+    # questions — important for rejection-sampling diversity and for getting
+    # successes spread across many questions rather than a handful.
     tasks = [
         _bound(q, s)
-        for q in questions
         for s in range(args.num_samples_per_q)
+        for q in questions
     ]
     raw_results = await asyncio.gather(*tasks)
     results = [r for r in raw_results if r is not None]
