@@ -158,3 +158,47 @@ train → eval on dv2026 val → (if learnability confirmed) collect mmlb transf
 transfer train → report. Open knobs to tune once real data exists: epochs for
 the overfit rung, train_batch_size for small sets, forward-KL top-k as ladder
 rung 2.
+
+### 2026-06-05 ~13:00 — monitor cycle: EVAL DONE, GPUs free
+- The 4-config eval finished: all `eval-9b` windows back at idle shell prompts;
+  local servers `:8927`/`:8909` torn down; **all 4 GPUs free** (14 MiB, 0%).
+  The tmux session still exists (not closed) — so the "session exists" gate is
+  misleading; reality (idle GPUs, eval done) says GO. Acting on it.
+- `:8928` (remote 27B) is alive but **too slow for collection**: a 1-page-doc
+  validation rollout timed out at 280s (network + the reasoning model's long
+  per-turn generation). Not viable.
+- `vllm` is NOT in our .venv, but IS in sibling project venvs
+  (prime-rl, rlvr, epiq, pipeline-grpo). Using `prime-rl/.venv/bin/vllm`.
+- **Call-path analysis (decides server config):** LM uses `/v1/completions`
+  (raw text, pre-templated prompt — `reasoning-parser` irrelevant); VLM
+  `batch_look` uses `/v1/chat/completions` reading `message.content`
+  (reasoning-parser ON ⇒ null-content risk). → serve the 27B **without**
+  `--reasoning-parser`.
+- **Launched local 27B** (collection endpoint): `CUDA_VISIBLE_DEVICES=0,1
+  vllm serve Qwen/Qwen3.5-27B --port 8927 --gpu-memory-utilization 0.85
+  --data-parallel-size 2 --dtype bfloat16 --max-model-len 65536 --enforce-eager
+  --enable-prefix-caching` (tmux `stage0-prep:vllm-27b`). GPUs 0,1 = collection;
+  GPUs 2,3 reserved for training. Next: validate one rollout against local 8927
+  (check batch_look perception isn't truncated-thinking), then collect probe at
+  high concurrency, then SeqKD probe train on GPU 2.
+- **ROOT-CAUSED the rollout slowness (was an implementation bug, now fixed):**
+  `docvqa/tools.py` batch_look set neither `enable_thinking` nor sampling, so the
+  Qwen3.5 VLM defaulted to **thinking ON** — both a train/deploy mismatch (the
+  deployed scaffold's `configs/vlm/qwen-3_5-27b-vllm-local.yaml` uses
+  `enable_thinking:false`, temp 0.3, top_k 20) and the dominant cost (~70s/turn
+  of VLM reasoning). Fixed to match deployment (commit de88399f). After the fix a
+  full rollout completes (validation: term=submit, 4 turns, 230s, ~57s/turn,
+  correct format: python fence + real batch_look perception). The earlier
+  280/220s timeouts were this bug + hard 52-page docs, NOT a hang.
+- **Probe collection LAUNCHED** on local 8927: tmux `stage0-prep:collect-probe`,
+  self-restarting resumable loop, conc 6, n4, temp 0.7 ->
+  outputs/teacher_rollouts/dv2026_train_n4.jsonl. First completed rollout:
+  iter_cap @ 667s (hard q, anls=0) — some rollouts are slow/fail; success yield
+  TBD over next cycles. GPUs 0,1 ~71% util (server busy), 2,3 free for training.
+- **Monitor updated** -> `05a24900` (:12/:42): steady state — keep the 27B
+  server + collection alive, launch the SeqKD probe (EPOCHS=8) on GPU 2/3 once
+  >=20 anls==1.0 trajectories exist, diagnose OOM. Eval gate removed.
+- **Feasibility note:** at ~5-11 min/rollout and ~6 concurrent, the 56-Q probe
+  (~224 rollouts) is hours; **full mmlb (899 Q x4) is NOT feasible** — must
+  subsample mmlb (~150-200 Q) for the transfer run. Revisit after seeing teacher
+  success rate on the probe.
