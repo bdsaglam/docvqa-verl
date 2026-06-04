@@ -202,3 +202,19 @@ rung 2.
   (~224 rollouts) is hours; **full mmlb (899 Q x4) is NOT feasible** — must
   subsample mmlb (~150-200 Q) for the transfer run. Revisit after seeing teacher
   success rate on the probe.
+
+### 2026-06-05 ~01:40 — monitor cycle: fixed collection ordering logjam
+- State healthy: disk 186G free, 27B server up (8927), GPUs 0,1 busy (collection),
+  2,3 free. No training yet (gate: <20 successes). NOTE: monitor's
+  `pgrep -f sft_trainer` self-matches the cron's own command text → false
+  "TRAINING RUNNING"; the `train-*` tmux-window check is the reliable gate.
+- **Collection was stuck on the hardest doc first.** Questions processed in file
+  order; doc[0] = `comics_2` (52-page comic) → first ~32 rollouts all on it,
+  ~11 min each, 0 successes (1 iter_cap @29 turns, 1 wrong submit). Teacher IS
+  reasoning fine (`<think>` present, 1-4k chars) — these are just brutal Qs.
+- **Fix:** sorted the probe questions by ascending page count
+  (`data/docvqa-2026/val/train_byasc.json`, 1-page maps first → 110-page report
+  last) and restarted the collection loop on it (same output, resumable). Easy
+  docs now yield fast successes first → reach the 20-success training gate much
+  sooner; the giant docs (where the teacher mostly fails anyway) come last.
+  (tmux churn: had to kill a duplicate collect window; now single window #5.)
