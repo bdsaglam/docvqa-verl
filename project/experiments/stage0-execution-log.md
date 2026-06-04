@@ -135,3 +135,26 @@ mask validated; `docvqa/train/run_seqkd.sh` + README; Qwen3.5-4B cached; monitor
 cron `e096cb9b` will ramp collection and launch the probe when resources free.
 The remaining critical path (collect → train → eval) is gated purely on the eval
 finishing.
+
+**Recipe config validated** (`python -m verl.trainer.sft_trainer ... --cfg job`):
+all `run_seqkd.sh` hydra overrides compose with no unknown-key errors (data /
+model.lora_* / engine=fsdp / optim=fsdp / trainer / checkpoint all applied).
+So the monitor's training launch won't fail on a config typo; remaining launch
+risk is just GPU-memory tuning (4B + LoRA + 32k context), which the monitor
+diagnoses (lower MAX_LENGTH / MICRO_BATCH_SIZE_PER_GPU on OOM).
+
+**Decision: collection PAUSED during the eval.** Running it under 27B contention
+produced 0 completions in 30+ min while slowing the user's eval — negative value.
+Killed the collect loop/window. Monitor `6c68c4b3` now gates on `eval-9b`: while
+it runs, only report; once it's gone, ramp collection (conc 8, probe + mmlb) and
+launch the SeqKD probe on a freed GPU. **This session must stay alive** for the
+(session-only) monitor cron to keep firing.
+
+### Status at session pause (2026-06-05 ~00:40)
+Everything implementable without GPUs/spare-27B is done and tested. Blocked on
+the user's 4-config eval releasing :8927 + a GPU. Next concrete steps (monitor-
+driven, in order): collect probe trajectories → build parquet → SeqKD probe
+train → eval on dv2026 val → (if learnability confirmed) collect mmlb transfer →
+transfer train → report. Open knobs to tune once real data exists: epochs for
+the overfit rung, train_batch_size for small sets, forward-KL top-k as ladder
+rung 2.
