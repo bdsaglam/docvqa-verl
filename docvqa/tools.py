@@ -19,6 +19,11 @@ async def _one_look(
     path: str, query: str,
 ) -> str:
     img_b64 = base64.b64encode(Path(path).read_bytes()).decode()
+    # Match the deployed scaffold's VLM call (docvqa repo
+    # configs/vlm/qwen-3_5-27b-vllm-local.yaml): thinking DISABLED, temp 0.3,
+    # top_k 20. Without enable_thinking=false the Qwen3.5 VLM defaults to
+    # thinking, which both mismatches deployment and adds tens of seconds of
+    # reasoning to every perception call (it dominated rollout wall-clock).
     payload = {
         "model": model_id,
         "messages": [{"role": "user", "content": [
@@ -26,8 +31,10 @@ async def _one_look(
              "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
             {"type": "text", "text": query},
         ]}],
-        "max_tokens": 512,
-        "temperature": 0.0,
+        "max_tokens": 2048,
+        "temperature": 0.3,
+        "top_k": 20,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     try:
         resp = await client.post(f"{base_url}/v1/chat/completions", json=payload)
