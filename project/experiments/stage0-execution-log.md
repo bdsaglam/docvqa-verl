@@ -236,3 +236,25 @@ rung 2.
   throughput toward the 20-success training gate (~3-4 hrs at current yield).
 - No training yet (1 success, gate is 20). Monitor `05a24900` auto-launches the
   probe when the gate is met.
+
+### 2026-06-05 ~02:45 — monitor cycle: sample-major ordering for diversity
+- 18 rollouts, **5 successes (28%)** — teacher does fine on maps after all (10%
+  earlier was small-sample noise). BUT only **2 unique questions** solved: n=4
+  question-major order produced redundant samples on the same few easy questions.
+- **Fix:** switched `collect_trajectories.py` to **sample-major** order (sample 0
+  of every question, then sample 1, ...) so one pass covers all 56 questions ->
+  successes spread across many questions (commit 7e3129bf). Restarted collection
+  (resumed from 18; remaining tasks now cover non-maps categories first).
+- **Throughput note:** ~12 rollouts/hr; GPUs only ~60% util even at conc 12 ->
+  the bottleneck is NOT the server but per-rollout serialization (sequential
+  turns: LM gen -> subprocess code exec -> VLM call -> next turn). A potential
+  speed lever is removing `--enforce-eager` from the server (enables CUDA graphs)
+  — DEFERRED (server relaunch risk; collection works, probe reachable overnight).
+- **GOTCHA for future cycles:** `pkill -f collect_trajectories.py` also kills the
+  while-loop shell (its cmdline contains that string), so the self-restart won't
+  fire — must relaunch the loop manually after such a kill. Monitor already
+  handles "window/proc died -> relaunch", so this self-heals next cycle anyway.
+- Still ~12-15 more successes needed for the gate (~2-4 hrs). Per-rollout
+  iter_cap failures (4 so far) waste ~20-27 min each — a future lever is a
+  collection-only max_iterations cap, but successes submit early so it's
+  secondary.
