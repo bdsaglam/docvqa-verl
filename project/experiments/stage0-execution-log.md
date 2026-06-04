@@ -218,3 +218,21 @@ rung 2.
   docs now yield fast successes first → reach the 20-success training gate much
   sooner; the giant docs (where the teacher mostly fails anyway) come last.
   (tmux churn: had to kill a duplicate collect window; now single window #5.)
+
+### 2026-06-05 ~02:10 — monitor cycle: bumped concurrency; teacher-quality read
+- Collection progressing: 11 rollouts, **1 success (~10%)**, mostly `submit`
+  (teacher answers, doesn't get stuck). Per-rollout still ~5-17 min — now
+  **LM-bound** (teacher `<think>` reasoning per turn, ~70s/turn), NOT page/VLM
+  bound; the VLM fix worked but the teacher's own reasoning is the cost.
+- **Success rate is low but the prefix is maps-heavy** (page-sort put all the
+  1-page `maps` docs first; maps are content-HARD — reading legends/numbers off
+  a map). Teacher near-misses: `"Wareham, 4415"` vs gold `"Wareham"` (extra text
+  fails strict metric), misread `17/20` vs `27`. Real read on teacher quality
+  needs the non-maps categories (coming next in sort order). NOTE: page-count !=
+  difficulty — maps are small but hard.
+- **GPUs only ~60% util at conc 6** (rollouts idle the server during local
+  subprocess / VLM-serialization phases) -> bumped collection to **concurrency
+  12** (fits KV: our seqs ~20k tokens, max-model-len 65536). Should raise
+  throughput toward the 20-success training gate (~3-4 hrs at current yield).
+- No training yet (1 success, gate is 20). Monitor `05a24900` auto-launches the
+  probe when the gate is met.
