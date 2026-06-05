@@ -384,3 +384,19 @@ rung 2.
 - TODO when a GPU frees: serve BASELINE untrained Qwen3.5-4B + eval same heldout for
   a matched trained-vs-baseline comparison (the rigorous probe claim). Command mirrors
   the trained eval but --student-model Qwen/Qwen3.5-4B on a fresh served base model.
+
+### 2026-06-05 ~06:00 — v2 done; collection PAUSED; matched baseline eval launched
+- v2 retrain COMPLETE: final loss 0.176 (33 traj, EPOCHS=5), checkpoint
+  checkpoints/docvqa-seqkd/seqkd-probe-v2/global_step_40. GPU 3 freed.
+- **Paused dv2026 collection** (had 39 successes / 26 unique Q — enough for the
+  probe; resumable later) to free the 27B VLM :8927, which was the bottleneck
+  slowing the evals (collection conc12 + eval both hammered it).
+- **Launched matched BASELINE eval**: untrained Qwen3.5-4B served on GPU 3 :8931,
+  same dv2026 val-heldout (24 Q), n=1, same sampling -> baseline_heldout_n1.jsonl
+  (bg bx5cj5v0a, self-sequencing after server up). Now I'll have trained-vs-baseline
+  on the identical held-out set = the rigorous probe comparison.
+- Trained eval (bygi9ls9g, student v1 :8930) still finishing (slow under prior
+  contention). Both write results at end.
+- GPUs: 0,1 = 27B VLM (now eval-only load); 2 = trained student serve+eval;
+  3 = baseline serve+eval. disk 152G.
+- NEXT: read BOTH heldout numbers -> does SeqKD-trained 4B beat untrained 4B?
