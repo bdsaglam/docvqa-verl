@@ -490,3 +490,18 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
 - 2026-06-05 ~08:15: mmlb collection healthy — 47 rollouts, 19 successes (40%), 19 unique Q, ALL clean 'submit' (no token_cap, unlike dv2026 heldout). median 6.5min/rollout, DP=4 all 4 GPUs ~60% util. ~40 successes/hr -> ~150 in a few hrs. Disk 132G stable. No intervention; transfer training held for user.
 - 2026-06-05 ~08:45: mmlb collection on track — 91 rollouts, 36 successes (40%), 36 unique Q (still 1 success/Q = full diversity), 89 submit / 2 token_cap. ~34 successes/hr -> ~150 in ~3.4hr. disk 132G, all healthy. No intervention.
 - 2026-06-05 ~09:15: mmlb collection — 127 rollouts, 49 successes (39%), 49 unique Q (full diversity), 123 submit/4 token_cap. ~26 successes/hr -> ~150 in ~4hr. disk 131G, all healthy. No intervention.
+
+### 2026-06-05 ~09:40 — EVAL PROTOCOL: two-tier (dev subset vs final full)
+- Per user: don't eval on the full set during iteration. Use a fixed **stratified
+  subset** for before/after (baseline vs trained); full set only for the FINAL model.
+- Built `data/docvqa-2026/val/eval_subset_strat24.json`: **24 Q, 3 per category x 8
+  categories** (16 docs), deterministic (seed 0). This is the standard DEV eval set.
+- Protocol:
+  - **DEV (every train iteration):** eval baseline + trained on eval_subset_strat24,
+    n=1 (quick signal) or n=2-4 (firmer). Fast, paired, same questions.
+  - **FINAL (chosen model only):** full questions.json (80 Q), n=8, mean±std /
+    pass@8 / SC-8 (spec §9), then official test.
+- For the TRANSFER model (trained on mmlb, no dv2026), ALL of dv2026 val is clean
+  held-out, so the stratified subset is leakage-free.
+- Baseline-on-strat24 + trained-on-strat24 will be run during the transfer-eval
+  phase (all 4 GPUs are on collection now; no free GPU to serve a student model).
