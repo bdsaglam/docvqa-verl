@@ -536,3 +536,4 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   collection trickling on it. TRAIN: student GPU1. EVAL: 27B VLM GPU0 + baseline-4B
   GPU1 + trained-4B GPU2, **eval --concurrency 16** (was 4 — the real eval-speed lever
   is more concurrent student rollouts, not more teacher GPUs). GPU3 spare.
+- 2026-06-05 ~10:45: STAGE COLLECTING — 80 successes (20 to target 100), server DP=4 + collect loop healthy, disk 130G. No action.
