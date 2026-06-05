@@ -70,7 +70,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     data.messages_key=messages \
     data.ignore_input_ids_mismatch=True \
     data.pad_mode=no_padding \
-    data.use_dynamic_bsz=True \
+    data.use_dynamic_bsz=${USE_DYNAMIC_BSZ:-False} \
     data.max_length="${MAX_LENGTH}" \
     data.max_token_len_per_gpu="${MAX_TOKEN_LEN_PER_GPU}" \
     data.truncation=error \
