@@ -413,3 +413,4 @@ rung 2.
 - IMPLICATION for the real eval: n=8 x 80 Q would be ~640 multi-turn rollouts at this
   VLM-bound rate = many hours. The reportable eval will need either higher eval
   concurrency, a dedicated VLM, or accepting a long run.
+- 2026-06-05 ~06:45: heldout evals still grinding — trained ~195 turns (~75% of 24Q), baseline ~101 (~40%); VLM healthy, not stuck. Waiting for results (write-at-end). FUTURE: make eval.py write incrementally + bump eval concurrency (VLM KV only ~6% used) for the long n=8x80 reportable eval.
