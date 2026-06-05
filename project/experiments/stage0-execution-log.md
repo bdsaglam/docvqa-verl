@@ -400,3 +400,16 @@ rung 2.
 - GPUs: 0,1 = 27B VLM (now eval-only load); 2 = trained student serve+eval;
   3 = baseline serve+eval. disk 152G.
 - NEXT: read BOTH heldout numbers -> does SeqKD-trained 4B beat untrained 4B?
+
+### 2026-06-05 ~06:15 — both heldout evals grinding (VLM-latency-bound)
+- Trained (v1 :8930) ~106 student turns done (~half); baseline (4B :8931) ~46 (~20%).
+  Slow because each rollout turn blocks on a 27B-VLM batch_look over a high-res doc
+  page (~tens of seconds/call even at 60% VLM util) x multi-turn x 24 Q. Not stuck.
+- Disk 133G free (stable; the -20G was v2's 18G checkpoint, not a leak). HF cache
+  650G is pre-existing. Cleanup lever if needed: v1 raw model_world_size_*.pt (18G)
+  is redundant given merged_hf — safe to delete (won't resume v1).
+- No intervention; both evals notify on completion. Then: trained-vs-baseline binary
+  ANLS on identical 24 heldout Q = the probe's headline comparison.
+- IMPLICATION for the real eval: n=8 x 80 Q would be ~640 multi-turn rollouts at this
+  VLM-bound rate = many hours. The reportable eval will need either higher eval
+  concurrency, a dedicated VLM, or accepting a long run.
