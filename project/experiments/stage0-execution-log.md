@@ -330,3 +330,25 @@ rung 2.
   checkpoints/docvqa-seqkd/seqkd-probe, then EVAL on dv2026 (serve base+LoRA,
   run eval.py n=8). Then decide: retrain on 30-success set, or move to mmlb
   transfer collection.
+
+### 2026-06-05 ~05:05 — MILESTONE: learnability probe SUCCEEDED (training works)
+- **Probe v1 training COMPLETE & learning confirmed**: loss 0.383 (step1) -> 0.106
+  (step40), clean ~4x drop over 10 epochs (steps 33-40 ~0.06-0.13). Checkpoint:
+  `checkpoints/docvqa-seqkd/seqkd-probe/global_step_40/` (FSDP-sharded LoRA +
+  lora_train_meta.json + huggingface/ config+tokenizer). The end-to-end training
+  setup is VALIDATED: the 4B student learns to imitate 27B teacher trajectories.
+- **v2 retrain launched** on the fuller set (33 trajectories, collection now 33
+  successes): EPOCHS=5 (less overfit than v1's 10), GPU 3, bg job `b8s2au7nn` ->
+  outputs/prep/train_seqkd_probe_v2.log, experiment `seqkd-probe-v2` (fresh dir,
+  preserves v1).
+- **EVAL PATH (concrete, for next cycle):**
+  1. Merge LoRA->HF: `python -m verl.model_merger merge --backend fsdp
+     --local_dir checkpoints/docvqa-seqkd/seqkd-probe-v2/global_step_<N>
+     --target_dir checkpoints/docvqa-seqkd/seqkd-probe-v2/merged_hf`
+  2. Serve merged model with vLLM on a free GPU (agent_loop uses /completions).
+  3. `python docvqa/scripts/eval.py --questions data/docvqa-2026/val/questions.json
+     --lm-base-url <served> --vlm-base-url http://localhost:8927 --n 8` and compare
+     to the ~16.9% zero-shot baseline.
+- NOTE: probe trains on dv2026-train and would eval on dv2026 (in-distribution) —
+  this measures whether training *improves* the student, not a leakage-clean
+  number. The clean reportable result still needs the mmlb->dv2026 transfer run.
