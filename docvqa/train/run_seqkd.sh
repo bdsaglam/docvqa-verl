@@ -80,8 +80,9 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     model.lora_rank="${LORA_RANK}" \
     model.lora_alpha="${LORA_ALPHA}" \
     model.target_modules=all-linear \
-    model.use_remove_padding=True \
+    model.use_remove_padding=${USE_REMOVE_PADDING:-False} \
     model.enable_gradient_checkpointing=True \
+    +model.override_config.attn_implementation=${ATTN:-sdpa} \
     engine=fsdp \
     engine.strategy=fsdp2 \
     engine.ulysses_sequence_parallel_size=1 \
