@@ -4,7 +4,9 @@
 #
 # This is Stage-1 / loss-ladder-rung-1 of the off-policy distillation plan.
 # The data is a verl MultiTurnSFTDataset parquet (single `messages` column)
-# produced by docvqa/scripts/make_sft_data.py from collect_trajectories.py output.
+# produced by docvqa/scripts/make_sft_data.py from an eval.py run-dir
+# (`--in <run-dir>`, globbing tasks/*/trajectories.jsonl). An eval run IS the
+# trajectory collection.
 #
 # Usage:
 #   recipe/docvqa/run_seqkd.sh <train_parquet> <experiment_name> [nproc] [extra hydra overrides...]

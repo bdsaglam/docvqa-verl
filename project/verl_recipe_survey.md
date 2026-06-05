@@ -38,7 +38,7 @@ Concrete bits to reuse:
 
 - `verl.trainer.fsdp_sft_trainer` with `data.multiturn.enable=true`,
   `data.multiturn.messages_key=messages`, `data.multiturn.tools_key=tools`.
-  Native multi-turn SFT. Our `docvqa/scripts/collect_trajectories.py` already
+  Native multi-turn SFT. Our `docvqa/scripts/eval.py` run-dir already
   emits chat-format `messages` so the data side is wired up.
 - `recipe/retool/retool_sft_preprocess.py` — pattern for converting raw
   text-with-`<code>` blocks into the chat-format expected by the SFT trainer.
@@ -150,7 +150,7 @@ for the SFT-RS warmup stage.
 1. **Rebase** `feat/docvqa-scaffold` on `main` to pick up the vLLM and FSDP
    fixes above. Worth doing before the next training run; several of those
    commits touch code we already lean on.
-2. **SFT-RS warmup using the retool pattern.** `collect_trajectories.py`
+2. **SFT-RS warmup using the retool pattern.** An `eval.py` run-dir
    already emits the right format. Add a small preprocess step that
    filters `anls == 1.0` and projects to `{messages, tools}` rows, then run
    `verl.trainer.fsdp_sft_trainer` with `data.multiturn.enable=true`.

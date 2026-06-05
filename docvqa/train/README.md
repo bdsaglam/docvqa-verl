@@ -11,18 +11,20 @@ that format is incompatible). Loss-ladder rung 1; forward-KL top-k KD comes late
 # 0) Servers: 27B at :8927 (LM+VLM). 4B trains on a freed local GPU.
 
 # 1) Collect teacher trajectories (GPU-free; uses the running 27B server).
-#    Resumable; writes one JSONL line per rollout with anls + chat messages.
-python docvqa/scripts/collect_trajectories.py \
+#    An eval run IS the collection: it streams tasks/<doc>/trajectories.jsonl
+#    (full chat messages + anls + termination + exact token ids). Resumable.
+python docvqa/scripts/eval.py \
     --questions data/docvqa-2026/val/train.json \
-    --lm-base-url http://localhost:8927/v1  --lm-model  Qwen/Qwen3.5-27B \
-    --vlm-base-url http://localhost:8927    --vlm-model Qwen/Qwen3.5-27B \
-    --num-samples-per-q 4 --temperature 0.8 --concurrency 3 \
-    --output outputs/teacher_rollouts/dv2026_train_n4.jsonl --resume
+    --base-url http://localhost:8927/v1  --model  Qwen/Qwen3.5-27B \
+    --vlm-base-url http://localhost:8927 --vlm-model Qwen/Qwen3.5-27B \
+    --n 4 --temperature 0.8 --concurrency 3 \
+    --run-dir outputs/runs/dv2026_train_n4 --resume
 
 # 2) Filter to anls==1.0 successful trajectories -> verl SFT parquet
-#    (single `messages` column; MultiTurnSFTDataset format).
+#    (single `messages` column; MultiTurnSFTDataset format). --in takes the
+#    run-dir (globs tasks/*/trajectories.jsonl) or a single jsonl.
 python docvqa/scripts/make_sft_data.py \
-    --in  outputs/teacher_rollouts/dv2026_train_n4.jsonl \
+    --in  outputs/runs/dv2026_train_n4 \
     --out data/sft/dv2026_probe.parquet \
     --max-per-question 2
 
@@ -60,6 +62,43 @@ docvqa/train/run_seqkd.sh data/sft/dv2026_probe.parquet seqkd-probe 1
   raise `MAX_LENGTH`. Never right-truncate: it would cut the final `SUBMIT`
   (the most important supervised tokens).
 
+## Thinking-trace handling in multi-turn SFT (RESOLVED — keep all-turn thinking)
+
+Our trajectories carry a `<think>` reasoning block in (nearly) every assistant
+turn (we run `enable_thinking=True` — native think is the agent's only reasoning
+channel; see the project memory / HANDOFF note). Two regimes exist for multi-turn
+thinking data: **regime 1** keeps every turn's `<think>`; **regime 2** strips all
+but the last turn (the Qwen *whole-conversation* chat-template default).
+
+**Use regime 1 (keep all-turn thinking).** The governing rule is train/deploy
+distribution matching, and our deploy rollout is token-level append-only (TITO):
+`agent_loop` generates on `prompt_ids + response_ids`, appends the exact sampled
+assistant ids, and never re-renders, so prior-turn `<think>` survives byte-for-byte
+→ deploy is regime 1, so training must be too. (Full cited write-up:
+`project/research-findings-qwen-thinking-multiturn-sft.md`.)
+
+**The current path already delivers regime 1 — no special handling needed:**
+- **`MultiTurnSFTDataset` is per-turn, not whole-conversation.** It calls
+  `apply_chat_template(messages=[message])` on *each* message independently
+  (`verl/utils/dataset/multiturn_sft_dataset.py:214-223`), so every assistant
+  turn is rendered as a *last* turn → the template reconstructs the `<think>\n`
+  open tag and **keeps** that turn's reasoning. This is **regime 1**. (The
+  regime-2 stripping only happens if you call
+  `apply_chat_template(whole_message_list)` once — which is *not* what the dataset
+  class does. The earlier note that the messages path = regime 2 was wrong.)
+- The `ignore_input_ids_mismatch=True` flag is exactly the acknowledgment that
+  per-turn concat (regime 1) differs from a whole-conversation render (regime 2)
+  for Qwen-thinking — and we keep the per-turn result. See the correctness note
+  above.
+
+**RL / RFT / OPD note:** these stages generate rollouts **online** inside verl's
+in-process rollout (sglang/vLLM), which is TITO by construction — the trainer sees
+the exact sampled token ids, so the sampler/trainer match is automatic and there
+is no offline-collection re-tokenization to worry about. The token ids `eval.py`
+saves (`prompt_ids`/`response_ids`/`response_mask`, default on) are for *offline*
+SFT-on-exact-tokens / teacher-forced KD over teacher trajectories; for those,
+teacher forcing makes the decode→re-encode round-trip immaterial.
+
 ## Evaluating a trained checkpoint (verified procedure)
 
 verl saves an FSDP-sharded checkpoint. Merge it to a plain HF model, serve that,
@@ -79,22 +118,31 @@ cp -L "$BASE"/preprocessor_config.json "$BASE"/video_preprocessor_config.json \
       checkpoints/docvqa-verl/<exp>/merged_hf/
 
 # 3) Serve the merged model. Do NOT set --served-model-name: eval.py loads the
-#    tokenizer from --student-model AND uses it as the API id, so both must be the
+#    tokenizer from --model AND uses it as the API id, so both must be the
 #    same local path.
 CUDA_VISIBLE_DEVICES=<free gpu> /home/baris/repos/prime-rl/.venv/bin/vllm serve \
     checkpoints/docvqa-verl/<exp>/merged_hf \
     --port 8930 --gpu-memory-utilization 0.6 --dtype bfloat16 \
     --max-model-len 65536 --enforce-eager
 
-# 4) Eval. NOTE flags are --student-base-url / --student-model (not --lm-*).
+# 4) Eval. NOTE flags are --base-url / --model (the agent LM; not --lm-*).
 python docvqa/scripts/eval.py \
     --questions data/docvqa-2026/val/eval_subset_strat24.json \
-    --student-base-url http://localhost:8930/v1 \
-    --student-model checkpoints/docvqa-verl/<exp>/merged_hf \
+    --base-url http://localhost:8930/v1 \
+    --model checkpoints/docvqa-verl/<exp>/merged_hf \
     --vlm-base-url http://localhost:8927 --vlm-model Qwen/Qwen3.5-27B \
     --concurrency 8 --n 1 --temperature 0.6 --top-p 0.95 --top-k 20 \
-    --output outputs/eval/<exp>_strat24.jsonl
+    --run-dir outputs/runs/<exp>-strat24
 ```
+
+`eval.py` writes an `output/runs/`-style dir: `results.json`
+(`summary.overall_accuracy` = headline binary-ANLS, plus `by_category` and
+`documents`) and `tasks/<doc_id>/{result.json, trajectories.jsonl}`. The per-doc
+`trajectories.jsonl` carries full chat `messages` + `anls` + `termination` per
+(question, sample), so **an eval run also collects trajectories** — build SFT data
+straight from a run with `make_sft_data.py --in <run-dir>` (no separate collection
+step). It also saves the exact token stream (`prompt_ids`/`response_ids`/
+`response_mask`, default on; `--no-token-ids` to omit).
 
 ### Two-tier eval protocol
 - **Dev (every iteration):** `eval_subset_strat24.json` — 24 Q, 3 per category x 8
@@ -104,4 +152,7 @@ python docvqa/scripts/eval.py \
 - **Final (chosen model only):** full `questions.json` (80 Q), n=8, report
   mean±std / pass@8 / SC-8 (spec §9), then the official test.
 - Eval is VLM-call-latency-bound, so raise `--concurrency` (the 27B VLM is far from
-  saturated); the eval output is a JSON array. `eval.py` writes results at the end.
+  saturated). Per-doc `trajectories.jsonl` is streamed as questions finish (crash-safe);
+  `results.json`/`tasks/*/result.json` summaries are written at the end. Use
+  `--rollout-timeout` (default 600s) to bound pathological long-doc rollouts — but run
+  the eval with the VLM ~uncontended, or legit-slow rollouts get cut and scored 0.
