@@ -55,7 +55,7 @@ MAX_TOKEN_LEN_PER_GPU=${MAX_TOKEN_LEN_PER_GPU:-32768}
 SAVE_FREQ=${SAVE_FREQ:--1}
 VAL_FILES=${VAL_FILES:-null}
 LOGGER=${LOGGER:-console,wandb}
-PROJECT_NAME=${PROJECT_NAME:-docvqa-seqkd}
+PROJECT_NAME=${PROJECT_NAME:-docvqa-verl}
 SAVE_PATH=${SAVE_PATH:-checkpoints/${PROJECT_NAME}/${EXPERIMENT_NAME}}
 
 # Build the python logger list literal, e.g. console -> ['console']

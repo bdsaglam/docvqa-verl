@@ -560,3 +560,13 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   run seqkd-transfer: https://wandb.ai/bdsaglam/docvqa-seqkd/runs/zsb6x8n3
 - Training healthy on GPU1 (step1 loss 0.353, no OOM). Pipeline continues: merge->eval
   baseline+trained on strat24 -> report.
+
+### 2026-06-05 ~11:55 — W&B + checkpoints renamed to project `docvqa-verl` (user)
+- Renamed PROJECT_NAME docvqa-seqkd -> docvqa-verl (run_seqkd.sh default): W&B project
+  AND checkpoint root now docvqa-verl. Moved checkpoints/docvqa-seqkd -> docvqa-verl
+  (probe artifacts included). README example paths updated. Cron -> 627f90d8 (docvqa-verl
+  paths).
+- Transfer run relaunched (was step 2, cheap) under W&B project docvqa-verl:
+  https://wandb.ai/bdsaglam/docvqa-verl/runs/e22zixf6 . The earlier short run in the
+  old docvqa-seqkd W&B project (zsb6x8n3) is an orphan — user can delete that project.
+- Training healthy on GPU1.

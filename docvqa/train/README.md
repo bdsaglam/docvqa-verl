@@ -69,20 +69,20 @@ worked.)
 ```bash
 # 1) Merge FSDP checkpoint -> HF model dir (writes a full merged model.safetensors).
 python -m verl.model_merger merge --backend fsdp \
-    --local_dir   checkpoints/docvqa-seqkd/<exp>/global_step_<N> \
-    --target_dir  checkpoints/docvqa-seqkd/<exp>/merged_hf
+    --local_dir   checkpoints/docvqa-verl/<exp>/global_step_<N> \
+    --target_dir  checkpoints/docvqa-verl/<exp>/merged_hf
 
 # 2) Qwen3.5-4B is a ConditionalGeneration (VL) model -> vLLM needs the image
 #    processor config, which the merge omits. Copy it from the base cache:
 BASE=$(find ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-4B/snapshots -mindepth 1 -maxdepth 1 -type d | head -1)
 cp -L "$BASE"/preprocessor_config.json "$BASE"/video_preprocessor_config.json \
-      checkpoints/docvqa-seqkd/<exp>/merged_hf/
+      checkpoints/docvqa-verl/<exp>/merged_hf/
 
 # 3) Serve the merged model. Do NOT set --served-model-name: eval.py loads the
 #    tokenizer from --student-model AND uses it as the API id, so both must be the
 #    same local path.
 CUDA_VISIBLE_DEVICES=<free gpu> /home/baris/repos/prime-rl/.venv/bin/vllm serve \
-    checkpoints/docvqa-seqkd/<exp>/merged_hf \
+    checkpoints/docvqa-verl/<exp>/merged_hf \
     --port 8930 --gpu-memory-utilization 0.6 --dtype bfloat16 \
     --max-model-len 65536 --enforce-eager
 
@@ -90,7 +90,7 @@ CUDA_VISIBLE_DEVICES=<free gpu> /home/baris/repos/prime-rl/.venv/bin/vllm serve 
 python docvqa/scripts/eval.py \
     --questions data/docvqa-2026/val/eval_subset_strat24.json \
     --student-base-url http://localhost:8930/v1 \
-    --student-model checkpoints/docvqa-seqkd/<exp>/merged_hf \
+    --student-model checkpoints/docvqa-verl/<exp>/merged_hf \
     --vlm-base-url http://localhost:8927 --vlm-model Qwen/Qwen3.5-27B \
     --concurrency 8 --n 1 --temperature 0.6 --top-p 0.95 --top-k 20 \
     --output outputs/eval/<exp>_strat24.jsonl
