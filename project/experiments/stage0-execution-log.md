@@ -298,3 +298,20 @@ rung 2.
   ~92s/step (~60 min), GPU 3, tmux `train-seqkd-probe`. Collection continues GPUs 0,1.
 - NEXT: confirm completion + loss curve (learnability), locate adapter, eval on dv2026.
 - Monitor lesson: pin training GPU via `export`, not inline prefix.
+
+### 2026-06-05 ~04:00 — probe training STABLE after OOM root-cause
+- Prior relaunch crashed at **step 2 OOM** (78/79GB). Root cause: `use_dynamic_bsz`
+  packs multiple long CodeAct trajectories per micro-batch; **sdpa's quadratic
+  attention memory** then OOMs (the 12.5k-token trajectories are the driver). The
+  "GPU 0" in the error is PyTorch's view of the CUDA_VISIBLE_DEVICES=3 device.
+- **Fix:** `data.use_dynamic_bsz=False` -> 1 sequence/forward; peak memory bounded
+  to the single longest trajectory (~57GB < 80). Made durable: recipe default
+  `USE_DYNAMIC_BSZ=False` (commit 30c01300). Also hit exit-127 (background cmd
+  lacked venv) — relaunched via tracked bg job WITH `source .venv/bin/activate`.
+- **Training now stable**: step1 mem57.3GB loss0.383, step2 mem57.3GB loss0.466
+  (bounded mem, no OOM). 40 steps (~55min), GPU 3, bg job `bflwfygdq` ->
+  outputs/prep/train_seqkd_probe.log. Collection continues GPUs 0,1.
+- Lessons (3 real env/config bugs caught by running on real data, as intended):
+  flash-attn->sdpa; train_batch_size<dataset->0 steps; dynamic-bsz+sdpa OOM.
+  Plus infra gotchas: pin GPU via export, activate venv in bg jobs.
+- NEXT: loss curve over 10 epochs (overfit signal), checkpoint, eval adapter.
