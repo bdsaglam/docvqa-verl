@@ -520,3 +520,19 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   baseline, then STOP for user. GPU layout co-serves teacher+student per user note.
 - Target 100 (~6x the probe's 17). If strat24 shows improvement -> scale up / full
   eval; if flat -> that's the signal to start OPD/Pedagogical RL.
+
+### 2026-06-05 ~10:10 — GPU layout corrected (user): teacher=1 GPU, students get the rest
+- User: 27B teacher needs only 1 GPU; bottleneck is STUDENT rollout inference -> give
+  students the GPUs. Confirmed 27B fits on 1 GPU (it runs 1-replica-per-GPU now in DP=4).
+- User asked re: remote 8928 (ssh-forward to another host) as teacher — correct in
+  principle (SeqKD = no weight sync, teacher is inference-only). BUT 8928 is UNUSABLE
+  here: (a) flaky (2/3 reqs timed out >30s — that host is contended), (b) it has
+  `--reasoning-parser qwen3` so chat/completions returns content=None -> breaks
+  batch_look (reads message.content). Collection needs the VLM too, so it can't move
+  there either. -> keep teacher on the reliable LOCAL 27B; revisit 8928 only if it
+  stabilizes AND serves without reasoning-parser.
+- **Revised transfer driver (cron d297a1d3):** COLLECTING uses 27B DP=4 (all GPUs,
+  nothing else to run). At PREP: shrink 27B to SINGLE GPU 0 (frees 1,2,3), keep
+  collection trickling on it. TRAIN: student GPU1. EVAL: 27B VLM GPU0 + baseline-4B
+  GPU1 + trained-4B GPU2, **eval --concurrency 16** (was 4 — the real eval-speed lever
+  is more concurrent student rollouts, not more teacher GPUs). GPU3 spare.
