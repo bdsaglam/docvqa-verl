@@ -505,3 +505,18 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   held-out, so the stratified subset is leakage-free.
 - Baseline-on-strat24 + trained-on-strat24 will be run during the transfer-eval
   phase (all 4 GPUs are on collection now; no free GPU to serve a student model).
+
+### 2026-06-05 ~09:55 — USER GO: SeqKD transfer run (SDPA), autonomous pipeline armed
+- Decisions: (1) SDPA now, flash-attn option C (torch2.10/cu128 rebuild) deferred;
+  (2) proceed with SeqKD on more data (mmlb->dv2026); pivot to OPD/Pedagogical RL
+  only if it fails; (3) 4x80GB is enough to co-serve teacher+student.
+- Added make_sft_data `--max-tokens` (SDPA OOM safety): mmlb successes run
+  median ~7k / max ~29k tokens; --max-tokens 14000 drops ~16% (the longest).
+- **Transfer-run plan (autonomous, cron 51882a2d, artifact-driven stage machine):**
+  collect to 100 successes -> pause collection + shrink 27B to DP=2 on GPUs 0,1 ->
+  build parquet (--max-tokens 14000, --max-per-question 2) -> train student on GPU 2
+  (SDPA, EPOCHS=3, TRAIN_BATCH_SIZE=8) -> merge -> serve baseline(GPU2)+trained(GPU3)
+  -> eval BOTH on eval_subset_strat24 (n=1, VLM=27B on 0,1) -> report trained-vs-
+  baseline, then STOP for user. GPU layout co-serves teacher+student per user note.
+- Target 100 (~6x the probe's 17). If strat24 shows improvement -> scale up / full
+  eval; if flat -> that's the signal to start OPD/Pedagogical RL.
