@@ -433,3 +433,34 @@ rung 2.
   from narrow in-dist SFT — exactly the risk flagged at the start. If baseline is
   cleaner, this motivates EPOCHS<=5, KL-regularized KD, or OPD/Pedagogical RL.
 - 2026-06-05 ~07:12: baseline eval ~80% done (191 turns, ~19/24 rollouts, 80min elapsed) — NOT stuck (mis-read clock earlier), grinding the last few large-doc/token_cap rollouts. trained v1 result already in (12.5%). Waiting for baseline to complete the matched comparison.
+
+### 2026-06-05 ~07:15 — PROBE RESULT (matched comparison complete)
+**dv2026 val-heldout (24 Q, n=1), trained-v1 vs matched untrained-4B baseline:**
+| model | mean binary-ANLS | correct | token_cap |
+|---|---|---|---|
+| **Trained v1** (17 traj, EPOCHS=10) | **0.1250** | 3/24 | 8 |
+| **Baseline** (untrained 4B) | **0.1250** | 3/24 | 10 |
+
+- **NO net improvement on held-out** (12.5% = 12.5%). The per-category breakdown is
+  identical; aggregate score is a coincidence of the binary metric.
+- BUT the LoRA IS working: **11/24 held-out answers differ** between trained and
+  baseline — training changed behavior, it just didn't net-improve (wrong->wrong
+  swaps dominate; any wrong->right offset by right->wrong).
+- **token_cap trained(8) < baseline(10)** => training did NOT increase verbosity;
+  the verbosity/forgetting hypothesis is REJECTED. token_cap is doc-driven (large
+  held-out docs), affects both models.
+
+**Honest interpretation:**
+- The probe's PURPOSE (validate the pipeline end-to-end + show the model CAN learn
+  teacher data) is ACHIEVED: loss 0.40->0.10, behavior changed. Mechanism works.
+- Flat held-out performance is EXPECTED, not a failure: training on only **17
+  trajectories / 14 unique questions** cannot teach general DocVQA skill that
+  transfers to 24 different held-out docs. This was always a learnability probe,
+  not a performance run.
+- n=1 over 24 Q is very noisy (±1 Q = ±4%); 3-vs-3 is within noise regardless.
+- CONCLUSION: pipeline de-risked; performance question is UNANSWERED and requires
+  the real **transfer run** (mmlb, hundreds of trajectories, leakage-clean).
+
+**Next (the actual path to a reportable number):** mmlb->dv2026 transfer. Collect
+many more teacher trajectories (mmlb, subsampled for feasibility), train, eval n=8
+on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE.
