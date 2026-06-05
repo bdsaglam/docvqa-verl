@@ -283,3 +283,18 @@ rung 2.
   learnability signal), locate the LoRA checkpoint, then the adapter is ready to EVAL on
   dv2026 (needs serving base+LoRA — see docvqa/train/README "Evaluating"). This probe is
   a learnability + pipeline check; a fuller retrain on more successes can follow.
+
+### 2026-06-05 ~03:45 — CORRECTION + fix: probe training now actually running
+- Last cycle's "training running in tmux" was PREMATURE: the diag run worked briefly,
+  but the tmux relaunch **OOM'd on physical GPU 0** (the busy vLLM server). Cause:
+  `CUDA_VISIBLE_DEVICES=2` as an inline prefix to run_seqkd.sh did NOT pin the device
+  through torchrun (it leaked onto GPU 0). No checkpoint was produced.
+- **Fix:** `export CUDA_VISIBLE_DEVICES=3` (separate command, not inline) + GPU 3
+  (fully free) + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. Now training runs
+  correctly on GPU 3 (no OOM; GPU 0 untouched).
+- Rebuilt parquet from grown collection: **17 trajectories / 14 unique questions**
+  (maps, engineering_drawing, infographics, science_poster, slide) — good diversity.
+- Training: Qwen3.5-4B+LoRA(r32), FSDP2, sdpa, EPOCHS=10, 4 steps/epoch = 40 steps,
+  ~92s/step (~60 min), GPU 3, tmux `train-seqkd-probe`. Collection continues GPUs 0,1.
+- NEXT: confirm completion + loss curve (learnability), locate adapter, eval on dv2026.
+- Monitor lesson: pin training GPU via `export`, not inline prefix.
