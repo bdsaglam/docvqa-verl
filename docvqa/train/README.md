@@ -60,22 +60,48 @@ docvqa/train/run_seqkd.sh data/sft/dv2026_probe.parquet seqkd-probe 1
   raise `MAX_LENGTH`. Never right-truncate: it would cut the final `SUBMIT`
   (the most important supervised tokens).
 
-## Evaluating a trained LoRA adapter
+## Evaluating a trained checkpoint (verified procedure)
 
-The eval/collection scripts talk to an OpenAI-compatible endpoint, so serve the
-trained policy and point eval at it:
+verl saves an FSDP-sharded checkpoint. Merge it to a plain HF model, serve that,
+and point eval at it. (The `--enable-lora` path is finicky here; merging is what
+worked.)
 
 ```bash
-# Serve base 4B + LoRA adapter on a free GPU (vLLM supports --enable-lora).
-vllm serve Qwen/Qwen3.5-4B --enable-lora \
-    --lora-modules seqkd=checkpoints/docvqa-seqkd/seqkd-probe/<ckpt>/lora_adapter \
-    --port 8930
-# then:
-python docvqa/scripts/eval.py --questions data/docvqa-2026/val/questions.json \
-    --lm-base-url http://localhost:8930/v1 --lm-model seqkd \
+# 1) Merge FSDP checkpoint -> HF model dir (writes a full merged model.safetensors).
+python -m verl.model_merger merge --backend fsdp \
+    --local_dir   checkpoints/docvqa-seqkd/<exp>/global_step_<N> \
+    --target_dir  checkpoints/docvqa-seqkd/<exp>/merged_hf
+
+# 2) Qwen3.5-4B is a ConditionalGeneration (VL) model -> vLLM needs the image
+#    processor config, which the merge omits. Copy it from the base cache:
+BASE=$(find ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-4B/snapshots -mindepth 1 -maxdepth 1 -type d | head -1)
+cp -L "$BASE"/preprocessor_config.json "$BASE"/video_preprocessor_config.json \
+      checkpoints/docvqa-seqkd/<exp>/merged_hf/
+
+# 3) Serve the merged model. Do NOT set --served-model-name: eval.py loads the
+#    tokenizer from --student-model AND uses it as the API id, so both must be the
+#    same local path.
+CUDA_VISIBLE_DEVICES=<free gpu> /home/baris/repos/prime-rl/.venv/bin/vllm serve \
+    checkpoints/docvqa-seqkd/<exp>/merged_hf \
+    --port 8930 --gpu-memory-utilization 0.6 --dtype bfloat16 \
+    --max-model-len 65536 --enforce-eager
+
+# 4) Eval. NOTE flags are --student-base-url / --student-model (not --lm-*).
+python docvqa/scripts/eval.py \
+    --questions data/docvqa-2026/val/eval_subset_strat24.json \
+    --student-base-url http://localhost:8930/v1 \
+    --student-model checkpoints/docvqa-seqkd/<exp>/merged_hf \
     --vlm-base-url http://localhost:8927 --vlm-model Qwen/Qwen3.5-27B \
-    --n 8 --temperature 0.6 --top-p 0.95 --top-k 20
+    --concurrency 8 --n 1 --temperature 0.6 --top-p 0.95 --top-k 20 \
+    --output outputs/eval/<exp>_strat24.jsonl
 ```
 
-(Exact LoRA checkpoint subpath depends on verl's FSDP checkpoint layout; confirm
-after the first save.)
+### Two-tier eval protocol
+- **Dev (every iteration):** `eval_subset_strat24.json` — 24 Q, 3 per category x 8
+  categories (stratified, deterministic). Eval the **baseline (untrained 4B)** and
+  the **trained** model on it and compare (paired, same questions). n=1 for a quick
+  signal, n=2-4 for firmer. Fast.
+- **Final (chosen model only):** full `questions.json` (80 Q), n=8, report
+  mean±std / pass@8 / SC-8 (spec §9), then the official test.
+- Eval is VLM-call-latency-bound, so raise `--concurrency` (the 27B VLM is far from
+  saturated); the eval output is a JSON array. `eval.py` writes results at the end.
