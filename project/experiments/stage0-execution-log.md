@@ -352,3 +352,24 @@ rung 2.
 - NOTE: probe trains on dv2026-train and would eval on dv2026 (in-distribution) —
   this measures whether training *improves* the student, not a leakage-clean
   number. The clean reportable result still needs the mmlb->dv2026 transfer run.
+
+### 2026-06-05 ~05:15 — EVAL pipeline stood up; first eval running
+- Merged v1 LoRA->HF: `verl.model_merger merge --backend fsdp` -> merged_hf/
+  (8.5GB bf16 model.safetensors + lora_adapter/). Fixed missing
+  preprocessor_config.json / video_preprocessor_config.json (Qwen3.5-4B is a
+  ConditionalGeneration/VL model; vLLM needs them) by copying from base cache.
+- Served merged student on GPU 2 :8930 (prime-rl vllm). GOTCHA: eval.py loads the
+  tokenizer via AutoTokenizer.from_pretrained(student_model), so --student-model
+  must be the LOCAL PATH, and the vLLM served id must match -> serve WITHOUT
+  --served-model-name (id = the path).
+- **First eval RUNNING** (bg `bygi9ls9g`): trained student on dv2026 **val-heldout**
+  (24 Q, held out from probe training), n=1, temp0.6/top_p0.95/top_k20, student
+  :8930 + VLM :8927. -> outputs/eval/seqkd_probe_heldout_n1.jsonl. ~25-40min.
+- Parallel: v2 retrain on GPU 3 (33 traj, EPOCHS=5); collection on GPUs 0,1
+  (88 rollouts, 36 successes). All 4 GPUs now busy.
+- DISK WATCH: 154G free (96%). Each checkpoint's model_world_size_*.pt is 18GB +
+  merged_hf 8.5GB. max_ckpt_to_keep=2 bounds it, but clean stale checkpoints if
+  it drops below ~40G.
+- NEXT: read heldout eval result (first real ANLS signal: does the trained 4B beat
+  the ~16.9% zero-shot baseline?). Caveat: in-distribution (trained on dv2026-train);
+  a matched untrained-4B baseline on the same heldout set is still needed for rigor.
