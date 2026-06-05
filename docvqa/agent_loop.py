@@ -19,6 +19,7 @@ Earlier revisions also wired a BM25 ``search`` over OCR; the deployment-time
 scaffold dropped it (recursive VLM perception is the load-bearing mechanism)
 and we follow suit so train-time and deploy-time behavior stay aligned.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,19 +30,24 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from verl.experimental.agent_loop.agent_loop import (
-    AgentLoopBase, AgentLoopMetrics, AgentLoopOutput, register,
-)
-
 from docvqa.parser import parse_last_python_fence
 from docvqa.prompts import (
-    build_first_user_message, build_observation_message, build_system_prompt,
+    build_first_user_message,
+    build_observation_message,
+    build_system_prompt,
 )
 from docvqa.sandbox import build_sandbox_code
 from docvqa.subprocess_interp import (
-    CodeInterpreterError, FinalOutput, SubprocessInterpreter,
+    CodeInterpreterError,
+    FinalOutput,
+    SubprocessInterpreter,
 )
-
+from verl.experimental.agent_loop.agent_loop import (
+    AgentLoopBase,
+    AgentLoopMetrics,
+    AgentLoopOutput,
+    register,
+)
 
 # ---------------------------------------------------------------------------
 # Knobs
@@ -60,14 +66,15 @@ _DEFAULTS: dict[str, Any] = {
 
 def _adaptive_max_iter(num_pages: int, knobs: dict) -> int:
     import math
+
     bonus = knobs["page_factor"] * math.sqrt(max(0, num_pages - 9))
-    return min(knobs["max_iterations_cap"],
-               knobs["max_iterations_base"] + int(bonus))
+    return min(knobs["max_iterations_cap"], knobs["max_iterations_base"] + int(bonus))
 
 
 # ---------------------------------------------------------------------------
 # Agent loop
 # ---------------------------------------------------------------------------
+
 
 @register("docvqa_repl")
 class DocVQAReplAgentLoop(AgentLoopBase):
@@ -81,6 +88,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         # OmegaConf DictConfig -> plain dict for easier .get usage
         try:
             from omegaconf import OmegaConf
+
             if hasattr(agent_cfg, "_metadata"):
                 agent_cfg = OmegaConf.to_container(agent_cfg, resolve=True) or {}
         except Exception:
@@ -88,21 +96,15 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         self._knobs: dict[str, Any] = {**_DEFAULTS, **dict(agent_cfg)}
 
         self._vlm_base_url: str = (
-            agent_cfg.get("vlm_base_url")
-            or os.environ.get("DOCVQA_VLM_BASE_URL")
-            or "http://localhost:8928"
+            agent_cfg.get("vlm_base_url") or os.environ.get("DOCVQA_VLM_BASE_URL") or "http://localhost:8928"
         )
         self._vlm_model_id: str = (
-            agent_cfg.get("vlm_model_id")
-            or os.environ.get("DOCVQA_VLM_MODEL_ID")
-            or "Qwen/Qwen3.5-27B"
+            agent_cfg.get("vlm_model_id") or os.environ.get("DOCVQA_VLM_MODEL_ID") or "Qwen/Qwen3.5-27B"
         )
 
         self._response_length_cap: int = self.rollout_config.response_length
 
-    async def run(
-        self, sampling_params: dict[str, Any], **kwargs
-    ) -> AgentLoopOutput:
+    async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
         wall_start = time.monotonic()
 
         question = kwargs["question"]
@@ -126,6 +128,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         response_mask: list[int] = []
 
         import httpx
+
         from docvqa import tools as host_tools
 
         vlm_client = httpx.AsyncClient(timeout=120)
@@ -139,15 +142,20 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         parse_error_strikes = 0
 
         try:
+
             async def _batch_look_host(requests: list[dict]) -> list[str]:
                 return await host_tools.batch_look(
-                    requests, vlm_client, self._vlm_base_url, self._vlm_model_id,
+                    requests,
+                    vlm_client,
+                    self._vlm_base_url,
+                    self._vlm_model_id,
                 )
 
             def _batch_look_sync(requests):
                 """Bridge to async — invoked from a host-side thread by IPC."""
                 return asyncio.run_coroutine_threadsafe(
-                    _batch_look_host(requests), self.loop,
+                    _batch_look_host(requests),
+                    self.loop,
                 ).result(timeout=300)
 
             interp = SubprocessInterpreter(
@@ -175,7 +183,8 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 response_ids += assistant_ids
                 response_mask += [1] * len(assistant_ids)
                 assistant_text = self.tokenizer.decode(
-                    assistant_ids, skip_special_tokens=False,
+                    assistant_ids,
+                    skip_special_tokens=False,
                 )
                 clean_text = assistant_text.split("<|im_end|>")[0]
                 messages.append({"role": "assistant", "content": clean_text})
@@ -183,14 +192,15 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 code = parse_last_python_fence(clean_text)
                 if code is None:
                     parse_error_strikes += 1
-                    observation = (
-                        "[Error] No `python` code block found. "
-                        "Write a single ```python ... ``` block."
-                    )
+                    observation = "[Error] No `python` code block found. Write a single ```python ... ``` block."
                     if parse_error_strikes >= self._knobs["parse_error_strikes_to_terminate"]:
                         await self._append_observation(
-                            messages, response_ids, response_mask,
-                            turn, max_iter, observation,
+                            messages,
+                            response_ids,
+                            response_mask,
+                            turn,
+                            max_iter,
+                            observation,
                         )
                         termination = "parse_error"
                         break
@@ -198,7 +208,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     parse_error_strikes = 0
                     try:
                         result = await self.loop.run_in_executor(
-                            None, interp.execute, code,
+                            None,
+                            interp.execute,
+                            code,
                         )
                     except (CodeInterpreterError, SyntaxError) as e:
                         result = f"[Error] {e}"
@@ -206,13 +218,14 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     if isinstance(result, tuple) and isinstance(result[0], FinalOutput):
                         final, captured = result
                         submitted_answer = final.output.get("answer")
-                        observation = (
-                            (captured + "\n" if captured else "") +
-                            f"FINAL: {submitted_answer!r}"
-                        )
+                        observation = (captured + "\n" if captured else "") + f"FINAL: {submitted_answer!r}"
                         await self._append_observation(
-                            messages, response_ids, response_mask,
-                            turn, max_iter, observation,
+                            messages,
+                            response_ids,
+                            response_mask,
+                            turn,
+                            max_iter,
+                            observation,
                         )
                         termination = "submit"
                         break
@@ -220,8 +233,12 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                         submitted_answer = result.output.get("answer")
                         observation = f"FINAL: {submitted_answer!r}"
                         await self._append_observation(
-                            messages, response_ids, response_mask,
-                            turn, max_iter, observation,
+                            messages,
+                            response_ids,
+                            response_mask,
+                            turn,
+                            max_iter,
+                            observation,
                         )
                         termination = "submit"
                         break
@@ -240,8 +257,12 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     observation = self._truncate(observation)
 
                 await self._append_observation(
-                    messages, response_ids, response_mask,
-                    turn, max_iter, observation,
+                    messages,
+                    response_ids,
+                    response_mask,
+                    turn,
+                    max_iter,
+                    observation,
                 )
 
                 if len(response_ids) >= self._response_length_cap - 256:
@@ -281,8 +302,13 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         )
 
     async def _append_observation(
-        self, messages: list[dict], response_ids: list[int],
-        response_mask: list[int], turn: int, max_iter: int, output: str,
+        self,
+        messages: list[dict],
+        response_ids: list[int],
+        response_mask: list[int],
+        turn: int,
+        max_iter: int,
+        output: str,
     ) -> None:
         text = build_observation_message(turn, max_iter, output)
         messages.append({"role": "user", "content": text})

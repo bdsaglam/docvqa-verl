@@ -72,12 +72,25 @@ def write_parquet(kept: list[dict], out_path: Path) -> None:
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    """Read rollout records from a single .jsonl OR an eval run directory.
+
+    If ``path`` is a directory it is treated as an `eval.py` run dir and all
+    ``tasks/*/trajectories.jsonl`` files are concatenated — so an eval run
+    doubles as the trajectory collection (no separate collect script needed).
+    """
+    if path.is_dir():
+        files = sorted(path.glob("tasks/*/trajectories.jsonl"))
+        if not files:  # also accept a flat dir of *.jsonl
+            files = sorted(path.glob("*.jsonl"))
+    else:
+        files = [path]
     rows = []
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
+    for fp in files:
+        with fp.open() as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(json.loads(line))
     return rows
 
 
