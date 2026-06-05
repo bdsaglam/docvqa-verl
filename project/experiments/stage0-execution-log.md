@@ -258,3 +258,28 @@ rung 2.
   iter_cap failures (4 so far) waste ~20-27 min each — a future lever is a
   collection-only max_iterations cap, but successes submit early so it's
   secondary.
+
+### 2026-06-05 ~03:20 — MILESTONE: SeqKD training validated end-to-end on real data
+- Collection reached 14 successes / **11 unique questions** (40% rate) — sample-major
+  fix working; successes across maps, engineering_drawing, infographics, science_poster.
+- Decided to launch the probe training NOW (at 14, not waiting for 20) to validate the
+  REAL-DATA training path early while GPUs 2,3 idle — the biggest remaining unknown
+  (CPU validation used synthetic data).
+- Built parquet: `make_sft_data --max-per-question 2` -> 13 trajectories. Validated via
+  MultiTurnSFTDataset on real data: token lengths 4.3k/6k/12.6k (« 32768, no truncation),
+  assistant-only loss mask 0.18-0.45. (Whole-conversation apply_chat_template returns
+  len 2 on Qwen3.5 — a red herring; the per-turn dataset path is what matters.)
+- **Caught + fixed 2 real training-launch bugs** (the point of running early):
+  1. Model defaulted to flash_attention_2 (not installed) -> crash. Fixed:
+     `+model.override_config.attn_implementation=sdpa` + `use_remove_padding=False`
+     (varlen packing needs flash-attn). `engine.attn_implementation` isn't an FSDP-engine
+     field -> dropped. Both env-overridable now. (commit ac90acc3)
+  2. Recipe default train_batch_size=16 > 13 samples = 0 steps/epoch (silent no-op).
+     Launch with TRAIN_BATCH_SIZE=4 -> 3 steps/epoch.
+- **TRAINING RUNS**: Qwen3.5-4B + LoRA(r32), FSDP2, sdpa, EPOCHS=10, ~92s/step, 30 steps,
+  ~45 min total. GPU 2. Moved from a raw `&` diag run into tmux `train-seqkd-probe` for
+  robustness. Collection continues on GPUs 0,1 in parallel.
+- NEXT cycle: confirm training finished + inspect the loss curve (did train loss drop? =
+  learnability signal), locate the LoRA checkpoint, then the adapter is ready to EVAL on
+  dv2026 (needs serving base+LoRA — see docvqa/train/README "Evaluating"). This probe is
+  a learnability + pipeline check; a fuller retrain on more successes can follow.
