@@ -487,3 +487,4 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   Pedagogical RL; (c) eval throughput (n=8x80 ~= half a day at current VLM-bound
   rate — needs higher eval concurrency or a dedicated VLM). Data accumulates
   overnight either way.
+- 2026-06-05 ~08:15: mmlb collection healthy — 47 rollouts, 19 successes (40%), 19 unique Q, ALL clean 'submit' (no token_cap, unlike dv2026 heldout). median 6.5min/rollout, DP=4 all 4 GPUs ~60% util. ~40 successes/hr -> ~150 in a few hrs. Disk 132G stable. No intervention; transfer training held for user.
