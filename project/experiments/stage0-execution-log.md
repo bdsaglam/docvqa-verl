@@ -373,3 +373,14 @@ rung 2.
 - NEXT: read heldout eval result (first real ANLS signal: does the trained 4B beat
   the ~16.9% zero-shot baseline?). Caveat: in-distribution (trained on dv2026-train);
   a matched untrained-4B baseline on the same heldout set is still needed for rigor.
+
+### 2026-06-05 ~05:45 — steady state: eval running, v2 near done
+- Heldout eval (bygi9ls9g) progressing: student server :8930 served 44+ completions
+  (55-60 tok/s); writes results only at end. Contends with collection on the shared
+  27B VLM :8927, so slower than standalone. No errors.
+- v2 retrain: step 33/40, loss ~0.20-0.32 (down from ~0.42 at epoch 1). ~10min left.
+- Collection: 99 rollouts / 39 successes / 26 unique Q.
+- All 4 GPUs busy; disk 152G. No intervention.
+- TODO when a GPU frees: serve BASELINE untrained Qwen3.5-4B + eval same heldout for
+  a matched trained-vs-baseline comparison (the rigorous probe claim). Command mirrors
+  the trained eval but --student-model Qwen/Qwen3.5-4B on a fresh served base model.
