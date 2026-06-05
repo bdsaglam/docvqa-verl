@@ -489,3 +489,4 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   overnight either way.
 - 2026-06-05 ~08:15: mmlb collection healthy — 47 rollouts, 19 successes (40%), 19 unique Q, ALL clean 'submit' (no token_cap, unlike dv2026 heldout). median 6.5min/rollout, DP=4 all 4 GPUs ~60% util. ~40 successes/hr -> ~150 in a few hrs. Disk 132G stable. No intervention; transfer training held for user.
 - 2026-06-05 ~08:45: mmlb collection on track — 91 rollouts, 36 successes (40%), 36 unique Q (still 1 success/Q = full diversity), 89 submit / 2 token_cap. ~34 successes/hr -> ~150 in ~3.4hr. disk 132G, all healthy. No intervention.
+- 2026-06-05 ~09:15: mmlb collection — 127 rollouts, 49 successes (39%), 49 unique Q (full diversity), 123 submit/4 token_cap. ~26 successes/hr -> ~150 in ~4hr. disk 131G, all healthy. No intervention.
