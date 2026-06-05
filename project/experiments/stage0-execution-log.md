@@ -538,3 +538,16 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
   is more concurrent student rollouts, not more teacher GPUs). GPU3 spare.
 - 2026-06-05 ~10:45: STAGE COLLECTING — 80 successes (20 to target 100), server DP=4 + collect loop healthy, disk 130G. No action.
 - 2026-06-05 ~11:15: STAGE COLLECTING — 90 successes (10 to target). Server+collect healthy, disk 130G. Next cycle likely triggers PREP->TRAIN.
+
+### 2026-06-05 ~11:35 — TRANSFER: PREP+TRAIN done, training running
+- Trigger hit (101 successes). PREP: built data/sft/mmlb_transfer.parquet = **87
+  trajectories / 87 unique Q** (101 successes - 14 over-length @ --max-tokens 14000);
+  shrank 27B to SINGLE GPU 0 (confirmed fits: 73GB/80GB) freeing GPUs 1,2,3.
+- TRAIN running on GPU 1 (bg job bh7z71zon): Qwen3.5-4B+LoRA, SDPA, USE_DYNAMIC_BSZ=
+  False, EPOCHS=3, batch 8, **30 steps**, step1 loss 0.353, max-mem 35.7GB (no OOM).
+  ETA ~45min. (tmux send-keys kept dropping the venv PATH -> torchrun not found;
+  switched to run_in_background w/ `source .venv/bin/activate` — worked first try.
+  LESSON: launch training via run_in_background, not tmux send-keys.)
+- Collection trickles on the 1-GPU 27B (GPU0); GPUs 2,3 idle during train (eval uses
+  them). Cron d297a1d3 will MERGE then EVAL (baseline+trained on strat24) when the
+  global_step checkpoint appears.
