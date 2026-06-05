@@ -464,3 +464,26 @@ rung 2.
 **Next (the actual path to a reportable number):** mmlb->dv2026 transfer. Collect
 many more teacher trajectories (mmlb, subsampled for feasibility), train, eval n=8
 on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE.
+
+### 2026-06-05 ~07:45 — PROBE PHASE COMPLETE -> transfer-collection phase
+- Probe phase concluded (see result above): pipeline validated end-to-end
+  (collect->SFT->train->merge->serve->eval), learnability shown (loss 0.40->0.10),
+  held-out performance FLAT (trained 12.5% = baseline 12.5%, n=1) — expected for a
+  17-trajectory training set. The machinery works; performance needs scale.
+- **Transitioned to MMLB transfer-data collection** (the leakage-clean path to a
+  reportable number):
+  - Freed GPUs 2,3 (killed the idle student/baseline eval servers).
+  - Restarted the 27B as **DP=4 on ALL 4 GPUs** (port 8927, proven config) for max
+    collection throughput. (Botched the first restart — killed the working DP=2
+    server before the relaunch landed; recovered. tmux send-keys remains finicky.)
+  - Page-sorted mmlb train (899 Q; min 9 pages so rollouts are slower than dv2026's
+    1-pagers) and launched a resumable collection loop: tmux stage0-prep:collect-mmlb,
+    conc 16, n4, temp0.7 -> outputs/teacher_rollouts/mmlb_train_n4.jsonl.
+  - Monitor cron -> 6ccb737f: keeps DP=4 server + mmlb collection alive; reports
+    progress; **does NOT auto-launch transfer training** (left for user).
+- **DECISION FOR USER:** the transfer TRAINING is deliberately not auto-started.
+  Given the flat probe, you may want to weigh: (a) how much mmlb data to collect /
+  time budget; (b) continue SeqKD at scale vs pivot toward KL-reg KD / OPD /
+  Pedagogical RL; (c) eval throughput (n=8x80 ~= half a day at current VLM-bound
+  rate — needs higher eval concurrency or a dedicated VLM). Data accumulates
+  overnight either way.
