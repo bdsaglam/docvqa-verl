@@ -432,3 +432,4 @@ rung 2.
 - Hypothesis to test: token_cap failures suggest catastrophic-forgetting/verbosity
   from narrow in-dist SFT — exactly the risk flagged at the start. If baseline is
   cleaner, this motivates EPOCHS<=5, KL-regularized KD, or OPD/Pedagogical RL.
+- 2026-06-05 ~07:12: baseline eval ~80% done (191 turns, ~19/24 rollouts, 80min elapsed) — NOT stuck (mis-read clock earlier), grinding the last few large-doc/token_cap rollouts. trained v1 result already in (12.5%). Waiting for baseline to complete the matched comparison.
