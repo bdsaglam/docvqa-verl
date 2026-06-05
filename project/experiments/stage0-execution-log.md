@@ -315,3 +315,18 @@ rung 2.
   flash-attn->sdpa; train_batch_size<dataset->0 steps; dynamic-bsz+sdpa OOM.
   Plus infra gotchas: pin GPU via export, activate venv in bg jobs.
 - NEXT: loss curve over 10 epochs (overfit signal), checkpoint, eval adapter.
+
+### 2026-06-05 ~04:25 — probe training LEARNING; collection at 30 successes
+- Training healthy on GPU 3, step ~21/40. **Loss curve shows clear learning**
+  (the learnability signal we wanted): ~0.40 (epoch 1, steps 1-4) -> ~0.23-0.28
+  (epoch ~3-4) -> ~0.17-0.21 (epoch ~5). Decreasing monotonically-ish on the
+  17-trajectory set. ~27 min to completion (save at step 40). No OOM/errors.
+- Collection (parallel, GPUs 0,1): **72 rollouts, 30 successes, 23 unique Q**,
+  7 categories (maps, engineering_drawing, infographics, science_poster, slide,
+  business_report, comics), ~42% success. Already richer than the 17 we're
+  training on -> can retrain on the fuller set for a stronger result.
+- All infra healthy: disk 180G, server up, both loops alive.
+- NEXT: on training completion — confirm final loss, locate LoRA adapter under
+  checkpoints/docvqa-seqkd/seqkd-probe, then EVAL on dv2026 (serve base+LoRA,
+  run eval.py n=8). Then decide: retrain on 30-success set, or move to mmlb
+  transfer collection.
