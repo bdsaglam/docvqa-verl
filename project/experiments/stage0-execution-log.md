@@ -414,3 +414,21 @@ rung 2.
   VLM-bound rate = many hours. The reportable eval will need either higher eval
   concurrency, a dedicated VLM, or accepting a long run.
 - 2026-06-05 ~06:45: heldout evals still grinding — trained ~195 turns (~75% of 24Q), baseline ~101 (~40%); VLM healthy, not stuck. Waiting for results (write-at-end). FUTURE: make eval.py write incrementally + bump eval concurrency (VLM KV only ~6% used) for the long n=8x80 reportable eval.
+
+### 2026-06-05 ~07:00 — FIRST EVAL RESULT (trained v1, dv2026 heldout, n=1)
+- **Trained v1 (17 traj, EPOCHS=10) on val-heldout (24 Q, n=1): mean binary-ANLS
+  = 0.1250 (3/24), pass@1=0.125.** By cat: infographics 0.50, science_poster 0.20,
+  science_paper 0.14, rest 0. (eval output is a JSON ARRAY, not JSONL.)
+- **Caveats (important, honest):**
+  - n=1 over 24 Q is NOISY — each question = 4.2%; 3 vs 4 correct is 1 question.
+  - 2 of the 3 "correct" are `"Unknown"` (unanswerable Qs, gold="Unknown"); only
+    ONE is a real extracted answer ("30.2%").
+  - **8/24 (33%) hit `token_cap`** (ran out of tokens without submitting = forced
+    failures). The trained model OVER-GENERATES on hard held-out docs — likely an
+    EPOCHS=10 overfit -> verbosity effect. v2 (EPOCHS=5) may behave better.
+  - The ~16.9% "baseline" was full-80Q val, NOT this 24-Q subset -> not comparable.
+- **Matched baseline (untrained 4B, SAME 24 Q) is the real comparison** — running
+  (~70% done). Until then, no claim about whether SeqKD helped/hurt.
+- Hypothesis to test: token_cap failures suggest catastrophic-forgetting/verbosity
+  from narrow in-dist SFT — exactly the risk flagged at the start. If baseline is
+  cleaner, this motivates EPOCHS<=5, KL-regularized KD, or OPD/Pedagogical RL.
