@@ -551,3 +551,12 @@ on dv2026 val. The probe says the machinery is ready; now it needs DATA AT SCALE
 - Collection trickles on the 1-GPU 27B (GPU0); GPUs 2,3 idle during train (eval uses
   them). Cron d297a1d3 will MERGE then EVAL (baseline+trained on strat24) when the
   global_step checkpoint appears.
+
+### 2026-06-05 ~11:45 — W&B logging enabled
+- W&B IS configured on this box (entity bdsaglam, WANDB_API_KEY + ~/.netrc). I'd been
+  defaulting LOGGER=console out of caution — unnecessary. Changed run_seqkd.sh default
+  to `console,wandb` (all future runs log to W&B; cron-launched trainings inherit it).
+- Restarted the transfer run (was step 5/30, cheap) WITH W&B -> project docvqa-seqkd,
+  run seqkd-transfer: https://wandb.ai/bdsaglam/docvqa-seqkd/runs/zsb6x8n3
+- Training healthy on GPU1 (step1 loss 0.353, no OOM). Pipeline continues: merge->eval
+  baseline+trained on strat24 -> report.
