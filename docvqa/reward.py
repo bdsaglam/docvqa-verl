@@ -1,65 +1,61 @@
 # docvqa/reward.py
-"""ANLS reward for DocVQA. Plugs into verl's custom_reward_function hook.
+"""Continuous-ANLS reward for the DocVQA CodeAct agent. verl custom_reward_function hook.
 
-The metric is identical to what evaluation uses — no train/eval drift.
-Score is 1.0 if the predicted answer is correct under
-`evaluate_prediction`, else 0.0.
+GRPO needs in-group reward *variance*. The eval metric (binary ANLS @ 0.9) is mostly-0 on
+hard DocVQA -> dead groups / cold-start. So the *reward* is continuous ANLS (get_anls, 0..1):
+dense partial credit, still maximized by exact answers. Evaluation stays binary@0.9 in the
+~/repos/docvqa harness -- reward != metric on purpose.
+
+The agent loop populates extra_fields (docvqa/agent_loop.py:307) which verl merges into
+extra_info: submitted_answer, num_turns, vlm_calls, wall_clock_s. We read submitted_answer
+directly (no regex on solution_str). Non-submission (None / "") -> 0.0, which -- with the
+optional per-turn length penalty -- discourages the ~37% wall_cap runaway the 4B exhibits.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from docvqa.metrics import evaluate_prediction
+from docvqa.metrics import get_anls
 
+# Subtract this * num_turns from the score (0 disables). Off for the first dry-run (validate
+# the bare ANLS signal first); turn on for the real run to attack the wall_cap runaway.
+LENGTH_PENALTY_PER_TURN = 0.0
 
+# Numeric keys propagated into reward_extra_info. ONLY numerics: verl's
+# process_validation_metrics runs np.mean/std/max/min on every key (metric_utils.py),
+# and protocol.py asserts every rollout emits the same key set -- so always emit all,
+# with defaults. Non-numeric metadata travels via the agent-loop JSONL dump instead.
 _NUMERIC_PASSTHROUGH: dict[str, float | int] = {
-    # agent-loop summary stats. ONLY numerics here: verl runs
-    # `process_validation_metrics` which does np.mean/std/max/min on
-    # every reward_extra_info value (`metric_utils.py:645`), so any
-    # string column would crash validation aggregation.
     "num_turns": 0,
     "vlm_calls": 0,
     "wall_clock_s": 0.0,
 }
-"""Numeric keys we propagate into reward_extra_info.
-
-Verl's contract: every reward_extra_info key gets aggregated as a
-numpy mean across the validation batch. Non-numeric metadata
-(record_id, doc_id, submitted_answer, etc.) lives instead in the
-agent-loop output's extra_fields and travels to the rollout JSONL
-dump via `trainer.rollout_data_dir`.
-
-Verl also asserts every rollout has the same set of keys
-(`protocol.py:concat`), so we always emit the full set with defaults.
-"""
 
 
 def compute_score(
-    data_source: str,  # noqa: ARG001 — verl signature
-    solution_str: str,  # noqa: ARG001 — we use extra_info from agent loop
-    ground_truth: str,
+    data_source: str = "",   # noqa: ARG001 -- verl signature
+    solution_str: str = "",  # noqa: ARG001 -- answer comes from extra_info, not the text
+    ground_truth: str = "",
     extra_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """verl reward function. Returns a dict with `score` plus extras.
+    """Return {'score': reward, 'anls': raw_anls, **numeric passthrough}.
 
-    Verl's reward manager unpacks `result["score"]` as the scalar reward
-    and feeds every other key into `reward_extra_info` (rollout JSONL
-    dump). All values must be numpy-array-compatible scalars/strings;
-    variable-shape values are filtered out via `_PASSTHROUGH_KEYS`.
-
-    `extra_info` arrives from the dataset row plus
-    `AgentLoopOutput.extra_fields` merged in by the agent-loop worker.
-    Correctness is computed against the model's `submitted_answer`
-    (None ⇒ 0 score) using the same `evaluate_prediction` as eval.
+    verl unpacks result['score'] as the scalar reward and feeds every other key into
+    reward_extra_info. score == penalized reward; anls == raw ANLS (diagnostic, unpenalized).
     """
     extra = extra_info or {}
     submitted = extra.get("submitted_answer")
-    if submitted is None:
-        score = 0.0
+    if submitted is None or submitted == "":
+        raw_anls = 0.0
     else:
-        is_correct, _extracted = evaluate_prediction(submitted, ground_truth)
-        score = 1.0 if is_correct else 0.0
-    out: dict[str, Any] = {k: extra.get(k, default) for k, default in _NUMERIC_PASSTHROUGH.items()}
+        raw_anls = float(get_anls(str(submitted), str(ground_truth)))
+
+    score = raw_anls
+    if submitted and LENGTH_PENALTY_PER_TURN:
+        num_turns = float(extra.get("num_turns") or 0)
+        score = max(0.0, raw_anls - LENGTH_PENALTY_PER_TURN * num_turns)
+
+    out: dict[str, Any] = {k: extra.get(k, d) for k, d in _NUMERIC_PASSTHROUGH.items()}
     out["score"] = score
-    out["anls"] = score
+    out["anls"] = raw_anls
     return out
