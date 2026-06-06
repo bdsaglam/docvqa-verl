@@ -14,6 +14,14 @@ SFT transfer is at/near ceiling for this rung, dragged by the ~37% wall_cap runa
 Non-goals: changing the agent scaffold (lives in `~/repos/docvqa`), VLM fine-tuning (frozen
 HTTP endpoint), eval-harness changes.
 
+## Env (resolved)
+
+`.venv-rl` built 2026-06-06 via `uv pip install -e '.[vllm]'`: **torch 2.9.0+cu128, vllm
+0.12.0** (top of verl's [0.8.5,0.12.0] range), verl 0.8.0.dev, CUDA 12.8, `cuda.is_available()`
+True. `import ray; from docvqa.agent_loop import DocVQAReplAgentLoop` works under `.venv-rl`.
+The working `.venv` (torch 2.12/cu130, SFT/eval) is untouched. Install log:
+`outputs/venv_rl_install.log`.
+
 ## Context: what already exists (and its single blocker)
 
 The 2026-06-06 autonomous driver wrote ~90% of the GRPO scaffold; **none of it has run

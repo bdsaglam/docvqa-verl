@@ -134,4 +134,4 @@ ENV/
 logs
 log
 outputs
-.history
+.history.venv-rl/
