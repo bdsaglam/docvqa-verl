@@ -29,7 +29,7 @@ once**. It is hard-blocked on environment:
 
 - `docvqa/train/run_grpo.sh` — GRPO + LoRA, inits actor from v1 SFT (`checkpoints/
   docvqa-verl/seqkd-transfer-mp/merged_hf`), `adv_estimator=grpo`, agent rollout via the
-  registered `docvqa_repl` loop, reward = `docvqa/rl_reward.py:compute_score`. Written, untested.
+  registered `docvqa_repl` loop, reward = `docvqa/reward.py:compute_score`. Written, untested.
 - Reward — **two files disagree**: `docvqa/rl_reward.py` (continuous ANLS, no `extra_info`)
   vs `docvqa/reward.py` (binary + numeric `extra_info` plumbing). The recipes point at
   different ones.
@@ -73,14 +73,14 @@ once**. It is hard-blocked on environment:
    verl + vllm[0.8.5,0.12.0]        ├─ rollout (vllm) → DocVQAReplAgentLoop (docvqa_repl)
    + the torch it pins              │      └─ batch_look() ──HTTP──► 27B VLM :8927 (frozen)
                                     ├─ ref policy (KL)
-                                    └─ reward: docvqa/rl_reward.py:compute_score (cont. ANLS)
+                                    └─ reward: docvqa/reward.py:compute_score (cont. ANLS)
                                             └─ OPD phase: + distillation teacher (27B, in-proc vLLM logprobs)
 ```
 
 Units and their boundaries:
 - **`.venv-rl`** — isolated interpreter; the only thing that knows about vllm. Interface:
   `source .venv-rl/bin/activate`. Depends on: verl repo (`-e '.[vllm]'`), CUDA driver.
-- **`docvqa/rl_reward.py:compute_score(data_source, solution_str, ground_truth, extra_info)`**
+- **`docvqa/reward.py:compute_score(data_source, solution_str, ground_truth, extra_info)`**
   — pure function, verl reward contract. Returns scalar ∈[0,1] (minus optional length
   penalty) + numeric `extra_info` (num_turns, vlm_calls, wall_clock_s). No I/O, unit-testable.
 - **`docvqa/train/run_grpo.sh`** — the GRPO entry. Parameterized so policy-loss mode,
