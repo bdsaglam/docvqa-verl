@@ -170,43 +170,70 @@ def rollout_detail(run: str, doc_id: str, question_id: str, sample_idx: int):
     raise HTTPException(404, "rollout not found")
 
 
-@lru_cache(maxsize=512)
-def _doc_pages_dir(dataset: str, split: str, doc_id: str) -> str | None:
-    cand = DATA_DIR / dataset / split / "docs" / doc_id / "pages"
-    return str(cand) if cand.is_dir() else None
+@lru_cache(maxsize=64)
+def _questions_doc_map(questions_path: str, _mtime: float) -> dict:
+    """doc_id -> doc_dir, parsed from a run's questions JSON (the authoritative
+    source of where a doc's pages live). _mtime busts the cache on file change."""
+    data = _read_json(Path(questions_path))
+    if data is None:
+        return {}
+    records = data if isinstance(data, list) else list(data.values())
+    out = {}
+    for r in records:
+        if isinstance(r, dict) and r.get("doc_id") and r.get("doc_dir"):
+            out[r["doc_id"]] = r["doc_dir"]
+    return out
+
+
+def _resolve_pages_dir(run_dir: Path, doc_id: str) -> Path | None:
+    """Find a doc's pages/ dir. Prefer the questions file's per-doc `doc_dir`
+    (config's dataset/split fields are often wrong/missing); fall back to the
+    DATA_DIR/<dataset>/<split>/docs/<doc_id> guess."""
+    cfg = _read_json(run_dir / "config.json") or {}
+    qpath = cfg.get("questions")
+    if qpath:
+        qp = Path(qpath)
+        if not qp.is_absolute():
+            qp = REPO_ROOT / qp
+        if qp.is_file():
+            dd = _questions_doc_map(str(qp), qp.stat().st_mtime).get(doc_id)
+            if dd:
+                pdir = Path(dd) / "pages"
+                if pdir.is_dir():
+                    return pdir
+    dataset, split = cfg.get("dataset"), cfg.get("split")
+    if dataset and split:
+        cand = DATA_DIR / dataset / split / "docs" / doc_id / "pages"
+        if cand.is_dir():
+            return cand
+    return None
 
 
 @app.get("/api/runs/{run}/doc/{doc_id}/pages")
 def doc_pages(run: str, doc_id: str):
     """List available page image filenames for a doc (sorted by page number)."""
     d = _safe_run_dir(run)
-    cfg = _read_json(d / "config.json") or {}
-    dataset, split = cfg.get("dataset"), cfg.get("split")
-    if not dataset or not split:
-        return {"pages": [], "dataset": dataset, "split": split}
-    pdir = _doc_pages_dir(dataset, split, doc_id)
+    pdir = _resolve_pages_dir(d, doc_id)
     if not pdir:
-        return {"pages": [], "dataset": dataset, "split": split}
+        return {"pages": [], "resolved": None}
     pages = []
-    for p in Path(pdir).glob("page_*.png"):
+    for p in pdir.glob("page_*.png"):
         try:
             n = int(p.stem.split("_")[1])
         except (IndexError, ValueError):
             continue
         pages.append(n)
     pages.sort()
-    return {"pages": pages, "dataset": dataset, "split": split}
+    return {"pages": pages, "resolved": str(pdir)}
 
 
 @app.get("/api/runs/{run}/doc/{doc_id}/page/{page}")
 def doc_page_image(run: str, doc_id: str, page: int):
     d = _safe_run_dir(run)
-    cfg = _read_json(d / "config.json") or {}
-    dataset, split = cfg.get("dataset"), cfg.get("split")
-    pdir = _doc_pages_dir(dataset or "", split or "", doc_id)
+    pdir = _resolve_pages_dir(d, doc_id)
     if not pdir:
         raise HTTPException(404, "pages dir not found")
-    img = Path(pdir) / f"page_{page}.png"
+    img = pdir / f"page_{page}.png"
     if not img.is_file():
         raise HTTPException(404, "page not found")
     return FileResponse(img, media_type="image/png")

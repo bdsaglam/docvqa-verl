@@ -81,7 +81,38 @@ function parseAssistant(content) {
   return { think, segs };
 }
 
-function renderTurn(msg, idx) {
+// extract page indices referenced via `pages[N]` in code segments (first-seen
+// order, deduped). `dynamic` flags `pages[<var/expr>]` we can't resolve statically.
+function extractPageRefs(segs) {
+  const seen = new Set(), pages = [];
+  let dynamic = false;
+  for (const s of segs) {
+    if (s.type !== "code") continue;
+    let m;
+    const re = /pages\[\s*(\d+)\s*\]/g;
+    while ((m = re.exec(s.text)) !== null) {
+      const n = +m[1];
+      if (!seen.has(n)) { seen.add(n); pages.push(n); }
+    }
+    if (/pages\[\s*[^\]\d\s][^\]]*\]/.test(s.text)) dynamic = true; // pages[i], pages[a:b]
+  }
+  return { pages, dynamic };
+}
+
+function lookStripHTML(segs, ctx) {
+  if (!ctx || !ctx.run || !ctx.doc) return "";
+  const { pages, dynamic } = extractPageRefs(segs);
+  if (!pages.length && !dynamic) return "";
+  const base = `/api/runs/${encodeURIComponent(ctx.run)}/doc/${encodeURIComponent(ctx.doc)}/page/`;
+  const thumbs = pages.map((p) =>
+    `<figure onclick="showLightbox('${base}${p}')"><img loading="lazy" src="${base}${p}" ` +
+    `onerror="this.closest('figure').style.display='none'"/><figcaption>p${p}</figcaption></figure>`).join("");
+  const note = dynamic ? `<span class="dyn-note">+ pages via loop/variable (not shown)</span>` : "";
+  const lab = `<div class="look-lab">👁 looked at ${pages.length} page${pages.length === 1 ? "" : "s"} ${note}</div>`;
+  return `<div class="lookpages">${lab}<div class="look-grid">${thumbs}</div></div>`;
+}
+
+function renderTurn(msg, idx, ctx) {
   const role = msg.role;
   if (role === "assistant") {
     const { think, segs } = parseAssistant(msg.content || "");
@@ -93,6 +124,7 @@ function renderTurn(msg, idx) {
       if (s.type === "prose") inner += `<div class="prose">${esc(s.text)}</div>`;
       else inner += `<pre class="code">${highlightPy(s.text)}</pre>`;
     }
+    inner += lookStripHTML(segs, ctx);
     return turnShell("assistant", `Assistant · turn ${idx}`, inner);
   }
   if (role === "user") {
@@ -187,6 +219,13 @@ async function viewTriage(run) {
 }
 
 function renderTriage(run) {
+  if (!triageRows.length) {
+    app.innerHTML = `<h2>${esc(run)}</h2>
+      <div class="empty">No trajectories on disk for this run yet —
+      <code>${esc(run)}/tasks/*/trajectories.jsonl</code> is empty.<br/>
+      (Collection/eval may still be running, or this run was cleaned up.)</div>`;
+    return;
+  }
   const cols = [
     ["category", "cat"], ["question_id", "question"], ["is_correct", "ok"],
     ["anls", "anls"], ["num_turns", "turns"], ["vlm_calls", "looks"],
@@ -281,8 +320,9 @@ function readerHeadHTML(rec, run, doc, qid, sidx) {
     </div></div></div>`;
 }
 
-function turnsHTML(rec) {
-  return `<div class="turns">${(rec.messages || []).map((m, i) => renderTurn(m, i)).join("")}</div>`;
+function turnsHTML(rec, run) {
+  const ctx = { run, doc: rec.doc_id };
+  return `<div class="turns">${(rec.messages || []).map((m, i) => renderTurn(m, i, ctx)).join("")}</div>`;
 }
 
 async function viewReader(run, doc, qid, sidx) {
@@ -296,18 +336,18 @@ async function viewReader(run, doc, qid, sidx) {
     readerHeadHTML(rec, run, doc, qid, sidx) +
     `<div class="toolbar">
        <button class="btn" id="cmp-btn">compare with another run…</button>
-       <button class="btn" id="pages-btn">show document pages</button>
+       <label class="toggle"><input type="checkbox" id="pages-chk"/> document pages</label>
      </div>` +
-    turnsHTML(rec) +
+    turnsHTML(rec, run) +
     `<div id="pages-panel" class="pages-panel"></div>`;
 
   $("cmp-btn").onclick = () => openComparePicker(run, doc, qid, sidx);
-  $("pages-btn").onclick = () => togglePages(run, doc);
+  $("pages-chk").onchange = (e) => setPagesPanel(run, doc, e.target.checked);
 }
 
-async function togglePages(run, doc) {
+async function setPagesPanel(run, doc, show) {
   const panel = $("pages-panel");
-  if (panel.dataset.open === "1") { panel.innerHTML = ""; panel.dataset.open = "0"; return; }
+  if (!show) { panel.innerHTML = ""; panel.dataset.open = "0"; return; }
   panel.dataset.open = "1";
   panel.innerHTML = `<div class="loading">Loading pages…</div>`;
   const data = await getJSON(`/api/runs/${encodeURIComponent(run)}/doc/${encodeURIComponent(doc)}/pages`);
@@ -353,7 +393,7 @@ async function viewCompare(runA, runB, doc, qid, sidx) {
     if (res.status !== "fulfilled")
       return `<div class="col"><h3>${esc(run)}</h3><div class="empty">not found in this run</div></div>`;
     const rec = res.value;
-    return `<div class="col"><h3>${esc(run)}</h3>${readerHeadHTML(rec)}${turnsHTML(rec)}</div>`;
+    return `<div class="col"><h3>${esc(run)}</h3>${readerHeadHTML(rec)}${turnsHTML(rec, run)}</div>`;
   };
   app.innerHTML = `<h2>Compare · <span class="mono">${esc(qid)}</span></h2>
     <div class="cmp">${col(runA, a)}${col(runB, b)}</div>`;
