@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DocVQA Trajectory Viewer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand" id="home">DocVQA <span>Trajectory Viewer</span></div>
+    <nav id="crumbs"></nav>
+    <div class="spacer"></div>
+    <span class="runsdir" id="runsdir"></span>
+  </header>
+
+  <main id="app"></main>
+
+  <!-- image lightbox -->
+  <div id="lightbox" class="lightbox hidden">
+    <img id="lightbox-img" alt="page" />
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
