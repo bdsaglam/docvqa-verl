@@ -4,7 +4,7 @@
 # Rung after SeqKD. Online GRPO: the 4B actor generates multi-turn agent rollouts through
 # DocVQAReplAgentLoop (registered as "docvqa_repl" in docvqa/agent.yaml); each rollout's
 # batch_look hits the frozen 27B VLM at :8927; reward = continuous ANLS
-# (docvqa/rl_reward.py:compute_score). adv_estimator=grpo (group-relative, no value fn).
+# (docvqa/reward.py:compute_score). adv_estimator=grpo (group-relative, no value fn).
 #
 # Init actor from the v1 SeqKD model (warm start → some in-group reward variance, avoids
 # the zero-variance GRPO cold start).
