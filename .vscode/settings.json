@@ -1,4 +1,9 @@
 {
+    "workbench.editorAssociations": {
+        "scribbles.md": "default",
+        "notes.md": "default",
+        "*.md": "vscode.markdown.preview.editor"
+    },
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.codeActionsOnSave": {
