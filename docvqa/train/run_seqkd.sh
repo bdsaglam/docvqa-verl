@@ -50,6 +50,7 @@ LORA_RANK=${LORA_RANK:-32}
 LORA_ALPHA=${LORA_ALPHA:-32}
 LR=${LR:-1e-4}
 EPOCHS=${EPOCHS:-3}
+WARMUP_STYLE=${WARMUP_STYLE:-cosine}   # cosine | constant (constant ignores min_lr_ratio)
 TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-16}
 MICRO_BATCH_SIZE_PER_GPU=${MICRO_BATCH_SIZE_PER_GPU:-1}
 MAX_LENGTH=${MAX_LENGTH:-32768}
@@ -92,7 +93,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     optim.lr="${LR}" \
     optim.lr_warmup_steps_ratio=0.03 \
     optim.weight_decay=0.0 \
-    optim.warmup_style=cosine \
+    optim.warmup_style=${WARMUP_STYLE} \
     optim.min_lr_ratio=0.1 \
     trainer.default_local_dir="${SAVE_PATH}" \
     trainer.project_name="${PROJECT_NAME}" \

@@ -123,7 +123,8 @@ _TASK_BODY = (
     "   ...\n"
     "   ```\n"
     "   That block will be executed. Anything outside the block is ignored.\n"
-    "3. ALWAYS print() values you want to see — only stdout is returned.\n"
+    "3. ALWAYS print() the values you want to observe — only printed stdout is "
+    "returned; a computed result you don't print is lost and the turn is wasted.\n"
     "4. SUBMIT a single answer string when ready: `SUBMIT(answer=\"42\")`.\n"
     "5. The answer must follow these formatting rules:\n\n"
 )
@@ -147,12 +148,13 @@ def build_first_user_message(
     """Mirror the ``rvlm_minimal`` first-user shape:
     ``question`` + a short ``doc_info`` line (category, pages).
     """
+    # Question LAST (recency): the model reads doc context first, then the question
+    # it must answer. No "Begin." sentinel (dead weight).
     return (
-        f"## Question\n{question}\n\n"
         f"## Document\n- category: {category}\n- num_pages: {num_pages}\n\n"
         f"## Variable preview\n"
         f"- pages: list[PIL.Image], length {num_pages}\n\n"
-        f"Begin."
+        f"## Question\n{question}"
     )
 
 
@@ -160,4 +162,6 @@ def build_first_user_message(
 
 
 def build_observation_message(turn: int, max_iter: int, output: str) -> str:
-    return f"## Turn {turn}/{max_iter}\n## Output\n```\n{output}\n```"
+    # No ``` fence around output: the fence was unnecessary and became part of what the
+    # model role-played when it hallucinated observations. Plain header + output is enough.
+    return f"## Output (Turn {turn}/{max_iter})\n{output}"

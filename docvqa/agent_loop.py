@@ -61,10 +61,11 @@ _DEFAULTS: dict[str, Any] = {
     "max_obs_chars": 8000,
     "subprocess_timeout_s": 120.0,
     "parse_error_strikes_to_terminate": 3,
-    # RL-only: select the FIRST python fence per turn (more predictable) instead of the
-    # last. Default False (last-fence) preserves eval/collection behaviour; the GRPO recipe
-    # sets this True. The format reward penalizes >1-block turns, so they should be rare.
-    "parse_first_fence": False,
+    # Select the FIRST python fence per turn (the model's real intended action) instead of
+    # the last. Default True everywhere (eval/collection/RL): if the model hallucinates a
+    # trailing tool-output fence after its code, last-fence would grab the fabricated block —
+    # first-fence always takes the legit one. The format reward penalizes >1-block turns.
+    "parse_first_fence": True,
 }
 
 
@@ -73,6 +74,25 @@ def _adaptive_max_iter(num_pages: int, knobs: dict) -> int:
 
     bonus = knobs["page_factor"] * math.sqrt(max(0, num_pages - 9))
     return min(knobs["max_iterations_cap"], knobs["max_iterations_base"] + int(bonus))
+
+
+# Markers that begin a *hallucinated* next-turn observation the model sometimes
+# role-plays after its code fence: the plain role label and the observation headers
+# emitted by build_observation_message ("## Turn {n}/{m}", "## Output").
+_HALLUC_OBS_MARKERS = ("\nuser\n", "\n## Turn", "\n## Output")
+
+
+def _strip_hallucinated_observation(text: str) -> str:
+    """Truncate ``text`` at the first hallucinated-observation marker, if any.
+
+    The legit ``<think>`` + ```` ```python ``` ```` fence always precedes these markers,
+    so the real turn content survives; only the fabricated tool output is dropped."""
+    cut = len(text)
+    for m in _HALLUC_OBS_MARKERS:
+        i = text.find(m)
+        if i != -1 and i < cut:
+            cut = i
+    return text[:cut]
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +212,14 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     sampling_params={
                         **sampling_params,
                         "max_tokens": self._knobs["max_response_tokens_per_turn"],
-                        "stop": ["<|im_end|>"],
+                        # Stop at <|im_end|> (clean turn end) AND at the markers the model
+                        # uses when it *hallucinates the next tool observation* after its
+                        # code fence (seen in ~24% of 27B turns): the plain role label
+                        # "\nuser\n" and the observation headers "## Turn"/"## Output" from
+                        # build_observation_message. Cutting here stops the model from
+                        # fabricating tool output (which, if trained on, teaches the student
+                        # to hallucinate). The legit code fence precedes these, so it survives.
+                        "stop": ["<|im_end|>", "\nuser\n", "\n## Turn", "\n## Output"],
                     },
                 )
                 assistant_ids = list(token_out.token_ids)
@@ -203,6 +230,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     skip_special_tokens=False,
                 )
                 clean_text = assistant_text.split("<|im_end|>")[0]
+                # Defensive: drop any hallucinated-observation tail that slipped past the
+                # stop sequences (keeps the SFT-text path clean even if a marker varies).
+                clean_text = _strip_hallucinated_observation(clean_text)
                 messages.append({"role": "assistant", "content": clean_text})
 
                 # Did this turn hit the per-turn token cap (clipped, no stop token)?

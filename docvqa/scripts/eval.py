@@ -154,6 +154,7 @@ async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
             "sample_idx": sample_idx, "submitted_answer": None,
             "extracted_answer": None, "is_correct": False, "anls": 0.0,
             "termination": None, "num_turns": 0, "vlm_calls": 0,
+            "turns_truncated": 0, "max_turn_tokens": 0,
             "wall_clock_s": 0.0, "messages": [],
             # token-level (exact teacher tokens + assistant-only loss mask), for
             # SFT-on-exact-tokens and as the basis for forward-KL/OPD/RL. Empty
@@ -179,6 +180,8 @@ async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
                 termination=ef.get("termination"),
                 num_turns=ef.get("num_turns") or 0,
                 vlm_calls=ef.get("vlm_calls") or 0,
+                turns_truncated=ef.get("turns_truncated") or 0,
+                max_turn_tokens=ef.get("max_turn_tokens") or 0,
                 wall_clock_s=ef.get("wall_clock_s", time.monotonic() - t0),
                 messages=ef.get("messages", []),
             )

@@ -135,3 +135,4 @@ logs
 log
 outputs
 .history.venv-rl/
+.claude/CLAUDE.md
