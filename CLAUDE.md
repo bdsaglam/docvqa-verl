@@ -90,8 +90,10 @@ reimplementing. Start here:
 - Upstream is `verl-project/verl` (configured as `git remote upstream`).
   Sync periodically; rebase project branches on upstream `main` rather than
   merging.
-- `recipe/` in upstream verl has reference training recipes; new recipes
-  for this project go in `recipe/docvqa/` (created on first use).
+- `recipe/` is an **uninitialized git submodule** (`verl-project/verl-recipe.git`),
+  so files placed under it are NOT tracked by this repo and conflict on upstream
+  rebases. **Project training recipes live in `docvqa/train/`** alongside the
+  tracked `run_seqkd.sh` / `run_grpo.sh` — put new recipes there, not in `recipe/`.
 - Other reference repos already cloned locally for cross-pollination:
   - `~/repos/verl` — clean upstream clone for diffing / cherry-picking.
   - `~/repos/prime-rl` — alternative RL training stack; useful for recipe

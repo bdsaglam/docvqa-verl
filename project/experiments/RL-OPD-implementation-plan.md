@@ -18,8 +18,8 @@
 - `docvqa/reward.py` — **Modify.** The single canonical reward module. Switch from binary `evaluate_prediction` to continuous `get_anls`; keep the clean `submitted_answer` extraction, dict-return, and numeric `extra_info` passthrough; add a length-penalty knob.
 - `docvqa/rl_reward.py` — **Delete.** Redundant once `reward.py` is continuous. (It regex-parses `solution_str`; `reward.py`'s `extra_info["submitted_answer"]` path is cleaner.)
 - `docvqa/tests/test_reward.py` — **Create.** Unit tests for `compute_score`.
-- `recipe/docvqa/run_grpo.sh` — **Modify.** Point reward at `docvqa/reward.py`; fix the venv note in the header.
-- `recipe/docvqa/run_opd.sh` — **Create (Phase 4).** GRPO recipe + `distillation.*` teacher flags (text OPD).
+- `docvqa/train/run_grpo.sh` — **Modify.** Point reward at `docvqa/reward.py`; fix the venv note in the header.
+- `docvqa/train/run_opd.sh` — **Create (Phase 4).** GRPO recipe + `distillation.*` teacher flags (text OPD).
 - `.claude/CLAUDE.md` — **Modify.** Register running RL work (session registry convention).
 
 ---
@@ -231,24 +231,24 @@ Expected: all 8 tests PASS.
 
 ```bash
 git rm docvqa/rl_reward.py 2>/dev/null || rm -f docvqa/rl_reward.py
-sed -i 's#custom_reward_function.path=docvqa/rl_reward.py#custom_reward_function.path=docvqa/reward.py#' recipe/docvqa/run_grpo.sh
-grep -n "custom_reward_function.path" recipe/docvqa/run_grpo.sh
+sed -i 's#custom_reward_function.path=docvqa/rl_reward.py#custom_reward_function.path=docvqa/reward.py#' docvqa/train/run_grpo.sh
+grep -n "custom_reward_function.path" docvqa/train/run_grpo.sh
 ```
 
 Expected: the grep shows `custom_reward_function.path=docvqa/reward.py`.
 
 - [ ] **Step 6: Fix the venv note in the recipe header**
 
-In `recipe/docvqa/run_grpo.sh`, change the header comment line `# Run with `.venv` active.` (~line 13) to `# Run with `.venv-rl` active (the only env with a verl-compatible vllm).`
+In `docvqa/train/run_grpo.sh`, change the header comment line `# Run with `.venv` active.` (~line 13) to `# Run with `.venv-rl` active (the only env with a verl-compatible vllm).`
 
 ```bash
-sed -i 's/Run with `.venv` active/Run with `.venv-rl` active (the only env with a verl-compatible vllm)/' recipe/docvqa/run_grpo.sh
+sed -i 's/Run with `.venv` active/Run with `.venv-rl` active (the only env with a verl-compatible vllm)/' docvqa/train/run_grpo.sh
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docvqa/reward.py docvqa/tests/test_reward.py recipe/docvqa/run_grpo.sh
+git add docvqa/reward.py docvqa/tests/test_reward.py docvqa/train/run_grpo.sh
 git add -u docvqa/rl_reward.py
 git commit -m "docvqa(rl): single continuous-ANLS reward module + length-penalty knob + tests"
 ```
@@ -277,7 +277,7 @@ Expected: a GPU with ~free memory (GPU 3), `27B health: 200`. **If `seqkd-v3` is
 
 ```bash
 tmux new-session -d -s grpo -n train
-tmux send-keys -t grpo:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && CUDA_VISIBLE_DEVICES=3 NGPUS=1 bash recipe/docvqa/run_grpo.sh 2>&1 | tee outputs/train_grpo_dryrun.log' Enter
+tmux send-keys -t grpo:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && CUDA_VISIBLE_DEVICES=3 NGPUS=1 bash docvqa/train/run_grpo.sh 2>&1 | tee outputs/train_grpo_dryrun.log' Enter
 ```
 
 (Recipe defaults are already a tiny dry-run: `TRAIN_BATCH_SIZE=4`, `ROLLOUT_N=4`, `MAX_STEPS=2`, `NGPUS=1`, `save_freq=-1`, `test_freq=-1`.) Expect to iterate on 2–3 config errors; fix in the recipe and relaunch.
@@ -311,7 +311,7 @@ Append a `## GRPO dry-run verdict (YYYY-MM-DD)` section to `project/experiments/
 - [ ] **Step 7: Commit the verdict + any recipe fixes**
 
 ```bash
-git add project/experiments/RL-OPD-design.md recipe/docvqa/run_grpo.sh
+git add project/experiments/RL-OPD-design.md docvqa/train/run_grpo.sh
 git commit -m "docvqa(rl): GRPO dry-run verdict + config fixes"
 ```
 
@@ -338,7 +338,7 @@ Expected: PASS (the penalty tests monkeypatch their own value; the default-chang
 
 ```bash
 tmux new-session -d -s grpo-real -n train
-tmux send-keys -t grpo-real:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && CUDA_VISIBLE_DEVICES=3 NGPUS=1 TRAIN_BATCH_SIZE=32 PPO_MINI_BATCH=8 ROLLOUT_N=8 MAX_STEPS=100 EXPERIMENT_NAME=docvqa-grpo-v1 bash recipe/docvqa/run_grpo.sh trainer.save_freq=20 trainer.test_freq=20 trainer.rollout_data_dir=outputs/docvqa-grpo-v1/rollouts 2>&1 | tee outputs/train_grpo_v1.log' Enter
+tmux send-keys -t grpo-real:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && CUDA_VISIBLE_DEVICES=3 NGPUS=1 TRAIN_BATCH_SIZE=32 PPO_MINI_BATCH=8 ROLLOUT_N=8 MAX_STEPS=100 EXPERIMENT_NAME=docvqa-grpo-v1 bash docvqa/train/run_grpo.sh trainer.save_freq=20 trainer.test_freq=20 trainer.rollout_data_dir=outputs/docvqa-grpo-v1/rollouts 2>&1 | tee outputs/train_grpo_v1.log' Enter
 ```
 
 (Batch/group/steps are starting points; tune to GPU memory. `save_freq`/`test_freq` re-enabled for the real run.)
@@ -375,13 +375,13 @@ git commit -m "docvqa(rl): GRPO v1 run config + eval vs SFT/baseline"
 ## Task 5: OPD from the 27B teacher (phase 2 — gated on GRPO GO + GPUs free)
 
 **Files:**
-- Create: `recipe/docvqa/run_opd.sh`
+- Create: `docvqa/train/run_opd.sh`
 
 The OPD trainer is GRPO + `distillation.*`. Our agent LM is **text-only** (batch_look outputs are text observations; the agent never sees images), so the teacher is the 27B as a **text** policy over the agent's reasoning tokens → base on the **text** example `examples/on_policy_distillation_trainer/run_qwen3_8b_fsdp.sh`, NOT the VL one.
 
-- [ ] **Step 1: Create `recipe/docvqa/run_opd.sh` from `run_grpo.sh` + distillation flags**
+- [ ] **Step 1: Create `docvqa/train/run_opd.sh` from `run_grpo.sh` + distillation flags**
 
-Copy `recipe/docvqa/run_grpo.sh` to `recipe/docvqa/run_opd.sh` and add the distillation block (teacher = 27B served as an in-process vLLM logprob cluster on its own GPUs):
+Copy `docvqa/train/run_grpo.sh` to `docvqa/train/run_opd.sh` and add the distillation block (teacher = 27B served as an in-process vLLM logprob cluster on its own GPUs):
 
 ```bash
     distillation.enabled=True \
@@ -397,7 +397,7 @@ Copy `recipe/docvqa/run_grpo.sh` to `recipe/docvqa/run_opd.sh` and add the disti
     distillation.distillation_loss.use_policy_gradient=${USE_POLICY_GRADIENT:-False} \
 ```
 
-(`use_policy_gradient=False` = pure OPD; `True` = OPD + RL advantages summed — the "combinations" method. `use_task_rewards` wires our ANLS reward into the distill objective.) Keep the same `docvqa_repl` rollout + `+...agent.docvqa.vlm_*` perception flags from `run_grpo.sh`. Verify bash syntax: `bash -n recipe/docvqa/run_opd.sh`.
+(`use_policy_gradient=False` = pure OPD; `True` = OPD + RL advantages summed — the "combinations" method. `use_task_rewards` wires our ANLS reward into the distill objective.) Keep the same `docvqa_repl` rollout + `+...agent.docvqa.vlm_*` perception flags from `run_grpo.sh`. Verify bash syntax: `bash -n docvqa/train/run_opd.sh`.
 
 - [ ] **Step 2: Plan the GPU layout (teacher + student + rollout + perception VLM)**
 
@@ -407,7 +407,7 @@ This needs: 27B teacher (≈2 GPUs in-job) + 4B student FSDP + 4B vllm rollout +
 
 ```bash
 tmux new-session -d -s opd -n train
-tmux send-keys -t opd:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && bash recipe/docvqa/run_opd.sh 2>&1 | tee outputs/train_opd_dryrun.log' Enter
+tmux send-keys -t opd:train 'cd /home/baris/repos/docvqa-verl && source .venv-rl/bin/activate && bash docvqa/train/run_opd.sh 2>&1 | tee outputs/train_opd_dryrun.log' Enter
 ```
 
 Validate: teacher vLLM cluster loads + produces logprobs over the student's rollout tokens; distill loss is finite (the recipe sets `loss_max_clamp`/`log_prob_min_clamp` in the example — port them if missing); no precision blowup. Write a go/no-go verdict into the design doc.
@@ -415,7 +415,7 @@ Validate: teacher vLLM cluster loads + produces logprobs over the student's roll
 - [ ] **Step 4: Commit the OPD recipe + verdict**
 
 ```bash
-git add recipe/docvqa/run_opd.sh project/experiments/RL-OPD-design.md
+git add docvqa/train/run_opd.sh project/experiments/RL-OPD-design.md
 git commit -m "docvqa(opd): on-policy distillation recipe (27B teacher) + dry-run verdict"
 ```
 

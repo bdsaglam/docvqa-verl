@@ -27,7 +27,7 @@ The working `.venv` (torch 2.12/cu130, SFT/eval) is untouched. Install log:
 The 2026-06-06 autonomous driver wrote ~90% of the GRPO scaffold; **none of it has run
 once**. It is hard-blocked on environment:
 
-- `recipe/docvqa/run_grpo.sh` — GRPO + LoRA, inits actor from v1 SFT (`checkpoints/
+- `docvqa/train/run_grpo.sh` — GRPO + LoRA, inits actor from v1 SFT (`checkpoints/
   docvqa-verl/seqkd-transfer-mp/merged_hf`), `adv_estimator=grpo`, agent rollout via the
   registered `docvqa_repl` loop, reward = `docvqa/rl_reward.py:compute_score`. Written, untested.
 - Reward — **two files disagree**: `docvqa/rl_reward.py` (continuous ANLS, no `extra_info`)
@@ -83,7 +83,7 @@ Units and their boundaries:
 - **`docvqa/rl_reward.py:compute_score(data_source, solution_str, ground_truth, extra_info)`**
   — pure function, verl reward contract. Returns scalar ∈[0,1] (minus optional length
   penalty) + numeric `extra_info` (num_turns, vlm_calls, wall_clock_s). No I/O, unit-testable.
-- **`recipe/docvqa/run_grpo.sh`** — the GRPO entry. Parameterized so policy-loss mode,
+- **`docvqa/train/run_grpo.sh`** — the GRPO entry. Parameterized so policy-loss mode,
   reward, init ckpt, group size, penalty, and GPU layout are env-overridable.
 - **OPD recipe (phase 2)** — GRPO recipe + `distillation.*`; teacher context built in
   `verl/experimental/teacher_loop/teacher_manager.py` (the PI seam).
