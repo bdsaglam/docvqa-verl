@@ -68,7 +68,16 @@ once**. It is hard-blocked on environment:
 
 6. **Format reward components (trajectory-scalar).** Reward = ANLS minus two optional,
    independently-tunable penalties, each a trajectory-level scalar (default 0.0):
-   - **length:** `LENGTH_PENALTY_PER_TURN * num_turns` (attacks the wall_cap runaway).
+   - **length:** `LENGTH_PENALTY_COEF * C_{k,q}(num_turns)` — a **concave-down, increasing**
+     penalty (Cursor "Composer 2" report, 2026): `C_{k,q}(x) = ((1+kx)^(1-q) - 1) / (k(1-q))`,
+     marginal cost `(1+kx)^(-q)` *decays* with length. Easy problems pushed to be short; hard
+     problems needing many turns aren't crushed. `q=0`→linear, `q=1`→log, `q>1`→saturates to
+     `1/(k(q-1))`. Attacks the wall_cap runaway. Acts on `num_turns` (chosen over a token/tool
+     weighted combo to keep one tunable knob on the noisy 56-Q set). GRPO synergy: advantages
+     are group-relative per question, so it differentiates within-question; concavity compresses
+     differences among a hard question's uniformly-long rollouts → difficulty-adaptive twice
+     over. (Cursor also drops GRPO's length-standardization term — deferred for now, one change
+     at a time.)
    - **format:** `FORMAT_PENALTY_PER_VIOLATION * (multi_block_turns + empty_output_turns)`
      — a turn that emits **>1** ```` ```python ```` block, or whose code **printed nothing**
      ("forgot to print"). Counts are computed in the agent loop and passed via `extra_fields`.

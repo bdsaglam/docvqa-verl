@@ -12,7 +12,11 @@ empty_output_turns. We read submitted_answer directly (no regex on solution_str)
 Non-submission (None / "") -> 0.0.
 
 Reward = ANLS minus two optional, independently-tunable trajectory-scalar penalties:
-- LENGTH_PENALTY_PER_TURN * num_turns -- attacks the ~37% wall_cap runaway (4B doesn't stop).
+- length: LENGTH_PENALTY_COEF * C_{k,q}(num_turns) -- a Cursor Composer-2-style *concave*
+  length penalty (see _concave_length_cost). Concave-down + increasing: the marginal cost of
+  an extra turn decays with length, so easy problems are pushed to be short while hard problems
+  that genuinely need many turns aren't crushed. Attacks the ~37% wall_cap runaway without a
+  flat per-turn tax. (q=0 recovers the plain linear LENGTH_PENALTY_COEF*num_turns.)
 - FORMAT_PENALTY_PER_VIOLATION * (multi_block_turns + empty_output_turns) -- format shaping:
   a turn that emits >1 ```python``` block, or whose executed code printed nothing ("forgot to
   print"). Both counts come from the agent loop. (0-block turns are already handled by the
@@ -20,18 +24,40 @@ Reward = ANLS minus two optional, independently-tunable trajectory-scalar penalt
 Both penalties default to 0.0 (validate the bare ANLS signal on the first dry-run, then turn
 on). The final score is clamped to >= 0. Per-turn (dense) format reward is a later upgrade;
 for now every component is a trajectory-level scalar.
+
+GRPO synergy: advantages are group-relative per question, so the length penalty mostly
+differentiates shorter-vs-longer rollouts of the SAME problem; the concavity compresses
+penalty differences among a hard question's uniformly-long rollouts -> difficulty-adaptive
+twice over (group-relative x concave). Source: Cursor "Composer 2" technical report (2026).
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from docvqa.metrics import get_anls
 
-# Subtract this * num_turns from the score (0 disables).
-LENGTH_PENALTY_PER_TURN = 0.0
+# Concave length penalty: subtract LENGTH_PENALTY_COEF * C_{k,q}(num_turns) (COEF=0 disables).
+# C_{k,q}(x) = ((1+kx)^(1-q) - 1) / (k(1-q)); marginal cost (1+kx)^(-q) decays with x for q>0.
+#   q=0 -> linear (x);  q=1 -> log(1+kx)/k;  q>1 -> saturates to the cap 1/(k(q-1)).
+LENGTH_PENALTY_COEF = 0.0
+LENGTH_PENALTY_K = 1.0
+LENGTH_PENALTY_Q = 1.0
 
 # Subtract this * (multi_block_turns + empty_output_turns) from the score (0 disables).
 FORMAT_PENALTY_PER_VIOLATION = 0.0
+
+
+def _concave_length_cost(x: float, k: float, q: float) -> float:
+    """Cursor Composer-2 nonlinear length cost: concave-down, increasing for q>0.
+
+    C_{k,q}(x) = ((1+kx)^(1-q) - 1) / (k(1-q)). Returns 0 for x<=0 or k<=0. Handles the
+    q=1 singularity via the log limit. q=0 -> linear; q>1 -> bounded by 1/(k(q-1))."""
+    if x <= 0 or k <= 0:
+        return 0.0
+    if abs(q - 1.0) < 1e-9:
+        return math.log1p(k * x) / k
+    return ((1.0 + k * x) ** (1.0 - q) - 1.0) / (k * (1.0 - q))
 
 # Numeric keys propagated into reward_extra_info. ONLY numerics: verl's
 # process_validation_metrics runs np.mean/std/max/min on every key (metric_utils.py),
@@ -52,7 +78,7 @@ def compute_score(
     ground_truth: str = "",
     extra_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return {'score': reward, 'anls': raw_anls, 'format_penalty': ..., **numeric passthrough}.
+    """Return {'score', 'anls', 'length_penalty', 'format_penalty', **numeric passthrough}.
 
     verl unpacks result['score'] as the scalar reward and feeds every other key into
     reward_extra_info. score == penalized reward; anls == raw ANLS (diagnostic, unpenalized).
@@ -64,7 +90,10 @@ def compute_score(
     else:
         raw_anls = float(get_anls(str(submitted), str(ground_truth)))
 
-    length_penalty = LENGTH_PENALTY_PER_TURN * float(extra.get("num_turns") or 0)
+    num_turns = float(extra.get("num_turns") or 0)
+    length_penalty = LENGTH_PENALTY_COEF * _concave_length_cost(
+        num_turns, LENGTH_PENALTY_K, LENGTH_PENALTY_Q
+    )
 
     format_violations = float(extra.get("multi_block_turns") or 0) + float(
         extra.get("empty_output_turns") or 0
@@ -76,5 +105,6 @@ def compute_score(
     out: dict[str, Any] = {k: extra.get(k, d) for k, d in _NUMERIC_PASSTHROUGH.items()}
     out["score"] = score
     out["anls"] = raw_anls
+    out["length_penalty"] = length_penalty
     out["format_penalty"] = format_penalty
     return out
