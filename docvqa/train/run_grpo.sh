@@ -74,6 +74,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.default_agent_loop=docvqa_repl \
     +actor_rollout_ref.rollout.agent.docvqa.vlm_base_url="${VLM_BASE_URL}" \
     +actor_rollout_ref.rollout.agent.docvqa.vlm_model_id="${VLM_MODEL}" \
+    +actor_rollout_ref.rollout.agent.docvqa.parse_first_fence=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     reward_model.reward_manager=naive \

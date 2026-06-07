@@ -24,12 +24,24 @@ def _strip_think_blocks(text: str) -> str:
     return text
 
 
+def parse_python_fences(text: str) -> list[str]:
+    """Return the contents of all python fences outside <think>, in order."""
+    if not text:
+        return []
+    outside = _strip_think_blocks(text)
+    return _FENCE_RE.findall(outside)
+
+
 def parse_last_python_fence(text: str) -> str | None:
     """Return the contents of the last python fence outside <think>, or None."""
-    if not text:
-        return None
-    outside = _strip_think_blocks(text)
-    matches = _FENCE_RE.findall(outside)
-    if not matches:
-        return None
-    return matches[-1]
+    fences = parse_python_fences(text)
+    return fences[-1] if fences else None
+
+
+def parse_first_python_fence(text: str) -> str | None:
+    """Return the contents of the first python fence outside <think>, or None.
+
+    More predictable than last-fence when a turn emits multiple blocks; used by RL
+    rollouts (the format reward penalizes >1 block, so this rarely differs in practice)."""
+    fences = parse_python_fences(text)
+    return fences[0] if fences else None

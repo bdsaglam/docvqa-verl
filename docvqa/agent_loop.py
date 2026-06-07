@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from docvqa.parser import parse_last_python_fence
+from docvqa.parser import parse_python_fences
 from docvqa.prompts import (
     build_first_user_message,
     build_observation_message,
@@ -61,6 +61,10 @@ _DEFAULTS: dict[str, Any] = {
     "max_obs_chars": 8000,
     "subprocess_timeout_s": 120.0,
     "parse_error_strikes_to_terminate": 3,
+    # RL-only: select the FIRST python fence per turn (more predictable) instead of the
+    # last. Default False (last-fence) preserves eval/collection behaviour; the GRPO recipe
+    # sets this True. The format reward penalizes >1-block turns, so they should be rare.
+    "parse_first_fence": False,
 }
 
 
@@ -140,6 +144,18 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         num_turns = 0
         vlm_calls = 0
         parse_error_strikes = 0
+        # Per-turn truncation instrumentation: a turn hits the per-turn
+        # max_tokens cap (max_response_tokens_per_turn) iff it emitted that many
+        # tokens AND never produced the <|im_end|> stop. Such turns clip the
+        # ```python``` block mid-stream → broken code / parse_error next turn.
+        # Surfaced so we can judge whether the per-turn cap is large enough.
+        turns_truncated = 0
+        max_turn_tokens = 0
+        # Format-violation counters (trajectory-scalar inputs to the RL format penalty):
+        #   multi_block_turns  -- turn emitted >1 ```python``` fence (only the selected one ran)
+        #   empty_output_turns -- code ran but printed nothing ("forgot to print")
+        multi_block_turns = 0
+        empty_output_turns = 0
 
         try:
 
@@ -189,7 +205,24 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 clean_text = assistant_text.split("<|im_end|>")[0]
                 messages.append({"role": "assistant", "content": clean_text})
 
-                code = parse_last_python_fence(clean_text)
+                # Did this turn hit the per-turn token cap (clipped, no stop token)?
+                if len(assistant_ids) > max_turn_tokens:
+                    max_turn_tokens = len(assistant_ids)
+                if (
+                    len(assistant_ids) >= self._knobs["max_response_tokens_per_turn"]
+                    and "<|im_end|>" not in assistant_text
+                ):
+                    turns_truncated += 1
+
+                fences = parse_python_fences(clean_text)
+                if len(fences) > 1:
+                    multi_block_turns += 1
+                if not fences:
+                    code = None
+                elif self._knobs["parse_first_fence"]:
+                    code = fences[0]
+                else:
+                    code = fences[-1]
                 if code is None:
                     parse_error_strikes += 1
                     observation = "[Error] No `python` code block found. Write a single ```python ... ``` block."
@@ -250,6 +283,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                         observation = str(result)
                     else:
                         observation = "(no output - did you forget to print?)"
+                        empty_output_turns += 1
 
                     if "batch_look(" in code:
                         vlm_calls += code.count("batch_look(")
@@ -294,6 +328,10 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 "submitted_answer": submitted_answer,
                 "num_turns": num_turns,
                 "vlm_calls": vlm_calls,
+                "turns_truncated": turns_truncated,
+                "max_turn_tokens": max_turn_tokens,
+                "multi_block_turns": multi_block_turns,
+                "empty_output_turns": empty_output_turns,
                 "wall_clock_s": time.monotonic() - wall_start,
                 "doc_id": meta["doc_id"],
                 "question_id": question_id,

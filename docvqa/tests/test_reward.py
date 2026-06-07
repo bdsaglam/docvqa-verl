@@ -59,3 +59,43 @@ def test_length_penalty_floors_at_zero(monkeypatch):
     monkeypatch.setattr(R, "LENGTH_PENALTY_PER_TURN", 1.0)
     out = _score("2048.88", "2048.88", num_turns=10)
     assert out["score"] == 0.0
+
+
+# --- format penalty (trajectory-scalar: sum of per-turn violations) ---
+
+
+def test_format_penalty_subtracts_per_violation(monkeypatch):
+    # violations = multi_block_turns + empty_output_turns = 2 + 1 = 3
+    monkeypatch.setattr(R, "FORMAT_PENALTY_PER_VIOLATION", 0.1)
+    out = _score("2048.88", "2048.88", multi_block_turns=2, empty_output_turns=1)
+    assert out["anls"] == 1.0                       # raw anls unaffected
+    assert out["format_penalty"] == pytest.approx(0.3)
+    assert out["score"] == pytest.approx(0.7)
+
+
+def test_format_penalty_default_off_is_inert():
+    out = _score("2048.88", "2048.88", multi_block_turns=2, empty_output_turns=1)
+    assert out["format_penalty"] == 0.0
+    assert out["score"] == 1.0
+
+
+def test_format_penalty_floors_at_zero(monkeypatch):
+    monkeypatch.setattr(R, "FORMAT_PENALTY_PER_VIOLATION", 1.0)
+    out = _score("2048.88", "2048.88", multi_block_turns=5)
+    assert out["score"] == 0.0
+
+
+def test_format_violation_counts_passthrough_numeric():
+    out = _score("x", "y", multi_block_turns=3, empty_output_turns=2)
+    assert out["multi_block_turns"] == 3
+    assert out["empty_output_turns"] == 2
+    for k, v in out.items():
+        assert isinstance(v, (int, float)), f"{k}={v!r} is not numeric"
+
+
+def test_length_and_format_penalties_stack(monkeypatch):
+    # 1.0 - 0.05*2 (length) - 0.1*1 (format) = 0.8
+    monkeypatch.setattr(R, "LENGTH_PENALTY_PER_TURN", 0.05)
+    monkeypatch.setattr(R, "FORMAT_PENALTY_PER_VIOLATION", 0.1)
+    out = _score("2048.88", "2048.88", num_turns=2, multi_block_turns=1)
+    assert out["score"] == pytest.approx(0.8)

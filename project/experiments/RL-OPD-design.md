@@ -66,6 +66,26 @@ once**. It is hard-blocked on environment:
    is the first clipped-surrogate + rollout run; precision matching, TITO, and the
    silent-bug checklist all bite here (SFT was immune).
 
+6. **Format reward components (trajectory-scalar).** Reward = ANLS minus two optional,
+   independently-tunable penalties, each a trajectory-level scalar (default 0.0):
+   - **length:** `LENGTH_PENALTY_PER_TURN * num_turns` (attacks the wall_cap runaway).
+   - **format:** `FORMAT_PENALTY_PER_VIOLATION * (multi_block_turns + empty_output_turns)`
+     — a turn that emits **>1** ```` ```python ```` block, or whose code **printed nothing**
+     ("forgot to print"). Counts are computed in the agent loop and passed via `extra_fields`.
+     0-block turns are NOT counted here (already handled by the loop's parse_error path → no
+     double penalty). Score clamped ≥ 0. (Per-turn *dense* format reward is a later upgrade;
+     for now every component is one scalar at the trajectory level.)
+
+7. **RL-only first-fence parsing.** The agent loop gets a `parse_first_fence` knob
+   (`_DEFAULTS=False` → last-fence, preserving eval/collection). The GRPO recipe sets it
+   `True`: RL rollouts select the **first** python fence per turn (more predictable than
+   last). **Parity nuance:** eval.py shares this agent loop and stays last-fence, so RL
+   (first) vs eval/deploy (last) diverge on multi-block turns — the format penalty makes
+   such turns rare, but once in-flight eval/collection finishes, flip eval to first-fence
+   too to restore train==deploy parsing. NB: the docvqa reference repo has *no* first/last
+   policy at all — its CodeAct uses a dspy structured `code` field (no fence regex), so
+   first-fence is a verl-side raw-text artifact, not a divergence from the reference.
+
 ## Architecture / components
 
 ```
