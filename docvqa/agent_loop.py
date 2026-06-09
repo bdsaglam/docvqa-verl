@@ -66,6 +66,11 @@ _DEFAULTS: dict[str, Any] = {
     # trailing tool-output fence after its code, last-fence would grab the fabricated block —
     # first-fence always takes the legit one. The format reward penalizes >1-block turns.
     "parse_first_fence": True,
+    # Extra generation stops that cut the model's role-played next-turn tail (fabricated
+    # "\nuser\n" / "## Turn" / "## Output" observations). ON for SFT DATA COLLECTION (we want
+    # clean teacher trajectories) and eval. **RL sets this False** — the policy must *learn*
+    # to stop correctly via the format reward, not have the bad behavior masked by a stop.
+    "extra_obs_stops": True,
 }
 
 
@@ -206,20 +211,19 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             for turn in range(1, max_iter + 1):
                 num_turns += 1
 
+                # <|im_end|> always; the role-play markers only when extra_obs_stops is set
+                # (collection/eval). For RL the policy must learn to stop via the reward, so
+                # the recipe sets extra_obs_stops=False and only <|im_end|> applies.
+                stops = ["<|im_end|>"]
+                if self._knobs["extra_obs_stops"]:
+                    stops += ["\nuser\n", "\n## Turn", "\n## Output"]
                 token_out = await self.server_manager.generate(
                     request_id=request_id,
                     prompt_ids=prompt_ids + response_ids,
                     sampling_params={
                         **sampling_params,
                         "max_tokens": self._knobs["max_response_tokens_per_turn"],
-                        # Stop at <|im_end|> (clean turn end) AND at the markers the model
-                        # uses when it *hallucinates the next tool observation* after its
-                        # code fence (seen in ~24% of 27B turns): the plain role label
-                        # "\nuser\n" and the observation headers "## Turn"/"## Output" from
-                        # build_observation_message. Cutting here stops the model from
-                        # fabricating tool output (which, if trained on, teaches the student
-                        # to hallucinate). The legit code fence precedes these, so it survives.
-                        "stop": ["<|im_end|>", "\nuser\n", "\n## Turn", "\n## Output"],
+                        "stop": stops,
                     },
                 )
                 assistant_ids = list(token_out.token_ids)
@@ -232,7 +236,10 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 clean_text = assistant_text.split("<|im_end|>")[0]
                 # Defensive: drop any hallucinated-observation tail that slipped past the
                 # stop sequences (keeps the SFT-text path clean even if a marker varies).
-                clean_text = _strip_hallucinated_observation(clean_text)
+                # Gated with extra_obs_stops: for RL (False) we keep the raw behavior so the
+                # format reward can penalize it and the policy learns to stop on its own.
+                if self._knobs["extra_obs_stops"]:
+                    clean_text = _strip_hallucinated_observation(clean_text)
                 messages.append({"role": "assistant", "content": clean_text})
 
                 # Did this turn hit the per-turn token cap (clipped, no stop token)?

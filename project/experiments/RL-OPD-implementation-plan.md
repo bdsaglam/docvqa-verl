@@ -445,3 +445,12 @@ Documented so the recipes above don't foreclose them; build under their own spec
 - **Spec coverage:** Env → Task 1. Reward reconciliation (continuous ANLS + extra_info) → Task 2. GRPO dry-run w/ RL-practices read + validation checklist + go/no-go → Task 3. GRPO real run + eval → Task 4. OPD text recipe + teacher-as-vLLM → Task 5. CISPO/GSPO + PI-teacher extensions → Future-extensions section (spec marked them not-built-now). Resource/sequencing (don't preempt SFT, 27B stays up) → Task 3 Step 2 + Task 5 Step 2. All spec sections mapped.
 - **Placeholder scan:** No TBD/TODO; reward code, tests, recipe edits, and commands are complete. `<N>` in the merge command is a runtime checkpoint number, not a plan placeholder.
 - **Type consistency:** `compute_score(data_source, solution_str, ground_truth, extra_info) -> dict` with keys `score`/`anls`/`num_turns`/`vlm_calls`/`wall_clock_s` is used identically in the tests and the recipe (`custom_reward_function.name=compute_score`). `LENGTH_PENALTY_PER_TURN` name matches between module and tests.
+
+## Scaffold knob for RL (added 2026-06-07)
+`docvqa/agent_loop.py` has `extra_obs_stops` (default **True** = collection/eval: adds
+stop seqs `\nuser\n`/`## Turn`/`## Output` + a defensive strip to clean the 27B's
+role-played observation tail). **The GRPO/RL recipe MUST set this False**
+(`+actor_rollout_ref.rollout.agent.docvqa.extra_obs_stops=False`) so the policy keeps
+its raw behavior and *learns* to stop correctly via the format reward (multi_block /
+empty_output penalties) — rather than having the hallucination masked by a stop.
+`parse_first_fence=True` stays on (runs the real first block).

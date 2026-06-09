@@ -39,12 +39,103 @@ The real "does SFT beat baseline" question is **open** and now runs on clean foo
 - **Teacher solve-yield jumped ~22% → ~98%** — the fix also helps the 27B *solve*: it
   no longer derails itself by executing hallucinated blocks. (Early-doc sample; watch.)
 
-## Status
-Clean restart in progress: collect (mmlb 391 Q, fixed scaffold) → build clean SFT data
-→ train `seqkd-clean-v4` (LoRA r32 all-linear, LR 2e-4 constant) → eval baseline +
-clean model under the fixed scaffold on `docvqa_mini` (29 Q) then full val (80 Q).
+## Status — FIRST CLEAN VERDICT IS IN (2026-06-08): transfer-SFT loses to baseline
+Clean restart done through the mini eval. `seqkd-clean-v5` (245 clean traj from
+MMLongBench-Doc, LoRA r32 all-linear, LR 2e-4 constant, 3 ep) vs untrained 4B on
+`docvqa_mini` (29 Q, n=4), fixed scaffold:
+
+| | baseline | clean-v5 | Δ |
+|--|--|--|--|
+| **overall ANLS@0.9** | **0.1897** | **0.1379** | −0.052 |
+| submit-only | 0.286 (77) | 0.216 (74) | −0.070 |
+| pass@4 / SC-4 | 0.414 / 0.310 | 0.345 / 0.172 | −0.07 / −0.14 |
+
+**Verdict: clean SFT on out-of-domain MMLongBench transfer data does NOT beat the
+fixed-scaffold baseline — it slightly degrades it.** Submission rate is unchanged
+(77→74); the loss is in *answer quality among submissions* (0.286→0.216) + a SC-4
+diversity collapse (0.31→0.17, mode-collapse toward teacher phrasings). Full-val
+(80 Q) was gated on clean-v5 beating baseline → **not run** (would only confirm a
+negative). The scaffold/prompt fix (0.042→0.19) remains the only lever that moved
+the needle. Full card: `results/clean-restart-mini-n4.md`.
+
+**Open question this raised:** is the failure the *domain gap* (MMLongBench ≠ DocVQA)
+or the *SFT setup itself*? → **ANSWERED below.**
+
+## In-domain upper-bound verdict (2026-06-08): the SFT SETUP is the limiter
+Trained `seqkd-indomain-v1` on 80 clean 27B-teacher trajectories collected on DocVQA
+**full val** (leaked-by-design), eval on `docvqa_mini` (a subset of val → also leaked):
+
+| | baseline | clean-v5 (transfer) | indomain-v1 (in-domain, leaked) |
+|--|--|--|--|
+| **overall** | **0.1897** | 0.1379 | **0.1466** |
+| submit-only | 0.286 (77) | 0.216 (74) | 0.218 (78) |
+| SC-4 | 0.310 | 0.172 | 0.241 |
+
+**Even leaked in-domain SFT (0.147) does NOT beat baseline (0.190)** — same mechanism
+as transfer (submit rate flat 77→78, answer quality drops 0.286→0.218, diversity
+collapses). So the prior failure was **NOT the domain gap**: SFT on 27B-teacher CodeAct
+trajectories is net-negative for this 4B **regardless of data source**, even under
+maximal favorability (in-domain + leakage). **The scaffold/prompt fix (0.042→0.190) is
+the only lever that has moved the metric.** Full card: `results/indomain-upperbound.md`.
+
+## Memorization / undertraining test (2026-06-09): setup OK, v1 undertrained, still ties
+Was the in-domain failure undertraining or a broken setup? Retrained the same 80 traj
+for **20 epochs** (vs 3) → train loss collapsed **0.37 → 0.003** (fully memorized), eval
+on the same leaked `docvqa_mini`:
+
+| | overall | train loss |
+|--|--|--|
+| baseline | 0.1897 | — |
+| indomain-v1 (3 ep) | 0.1466 | 0.22 |
+| indomain-v2 (20 ep, memorized) | **0.1897** | 0.003 |
+
+**v2 ties baseline exactly — never beats it.** So (a) the setup is **not broken** (it
+fits to ~0 loss), (b) v1 was **undertrained**, (c) even in-domain + leaked + fully
+memorized, SFT only **matches** baseline. Confirms the **multi-turn observation-shift**:
+memorizing teacher trajectories doesn't transfer to free rollout, where the model faces
+its own (different) VLM observations and can't replay the memorized answer. Card:
+`results/indomain-upperbound.md`.
+
+## Generalization test (2026-06-09): longer transfer-SFT also ties baseline (mmlb-long)
+Was clean-v5's 0.138 undertraining too? Trained the same 245 mmlb traj for **20 epochs,
+checkpointing every 5**, eval each on DocVQA (no leakage):
+
+| mmlb training | train loss | overall |
+|--|--|--|
+| 3 ep (clean-v5) | 0.18 | 0.138 |
+| 5 / 11 / 16 / 20 ep | 0.10→0.006 | 0.207 / 0.147 / 0.190 / 0.216 |
+| baseline | — | 0.1897 |
+
+**Bounces within the ±5% noise floor (29 Q) = null, ties baseline.** clean-v5's 0.138 was
+just the undertrained dip; more epochs recover to ≈baseline, none exceed it. No checkpoint
+cleared the bar for a full-val promotion. Card: `results/mmlb-long-generalization.md`.
+
+## FINAL VERDICT — SFT investigation complete (comprehensive null)
+| variant | overall | vs baseline 0.190 |
+|--|--|--|
+| transfer undertrained (clean-v5, 3ep) | 0.138 | hurts |
+| transfer long (mmlb-long, 5–20ep) | ≈0.19–0.22 | ties |
+| in-domain undertrained (v1, 3ep) | 0.147 | hurts |
+| in-domain memorized+leaked (v2, 20ep) | 0.190 | ties |
+
+**SFT on 27B-teacher CodeAct trajectories never beats the untrained 4B baseline** — any
+data source, any training length. Undertrained SFT *hurts* (collapses answer diversity);
+fully-fit SFT *ties*. The multi-turn agentic loop structurally defeats trajectory
+imitation: the model never sees its own rollout's observations during SFT. The
+scaffold/prompt fix (0.042→0.19) remains the only lever that has moved the metric.
+
+**Redirect:** SeqKD/SFT is not the lever. Move to on-policy methods where the model
+learns from its *own* rollouts: (1) RL on answer-level ANLS reward (GRPO etc.), (2) OPD
+(dense per-token signal, avoids the answer-distribution collapse SFT causes here),
+(3) scaffold / per-turn-cap / long-doc-runaway control (where the residual loss lives).
 
 ## Carry-forward lessons (scaffold-independent, still valid)
+- **/tmp PNG leak (FIXED `docvqa/sandbox.py`):** `batch_look` wrote a `delete=False` temp
+  PNG per image and never removed them → ~985G of `tmp*.png` accumulated across runs and
+  filled the disk. Fix = `try/finally os.remove` after the synchronous proxy returns.
+- **Parallel eval trick:** during SFT *training* the 27B VLM is idle; re-serve it DP=2
+  (free a GPU) to eval checkpoints in parallel with training. Turned a ~10h serial eval
+  phase into a few hours. (Eval is VLM-bound, so DP throughput is the cap.)
 - **Eval methodology:** train on *other* datasets (MMLongBench-Doc) → the full DocVQA
   val is leakage-free, so **no splits** — `docvqa_mini.json` (29 Q / 8 docs, 1 median
   doc per category) for quick iteration, `questions.json` (80 Q) for the reportable

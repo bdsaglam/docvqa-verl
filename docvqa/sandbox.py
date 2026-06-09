@@ -49,12 +49,26 @@ if "batch_look" in dir():
             batch_look([(pages[0], "layout?"),
                         (pages[1].crop((0,0,500,500)), "read text")])"""
         payload = []
+        paths = []
         for image, query in requests:
             tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             image.save(tmp, format="PNG")
             tmp.close()
+            paths.append(tmp.name)
             payload.append({"path": tmp.name, "query": query})
-        return _batch_look_proxy(payload)
+        try:
+            return _batch_look_proxy(payload)
+        finally:
+            # The proxy is synchronous — by the time it returns the answers the
+            # host VLM has read every image, so the temp PNGs are safe to delete.
+            # `delete=False` above is required so the host can open them by path;
+            # without this cleanup they leak to /tmp (we once accumulated ~985G of
+            # `tmp*.png` renders across collection/eval runs).
+            for _p in paths:
+                try:
+                    os.remove(_p)
+                except OSError:
+                    pass
 '''
 
 

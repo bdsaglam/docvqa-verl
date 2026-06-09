@@ -74,16 +74,41 @@ to baselines; superseded by the above.)
 5. SYNTH — write per-model result cards + update SFT-synthesis.md with the
    denoised verdict: does any SFT config beat baseline? which lever mattered?
 
-## Results (fill in as evals land) — strat24 n=4 binary@0.9
-| model | overall | submit-only | wall_cap | notes |
-|-------|---------|-------------|----------|-------|
-| baseline | _ | _ | _ | |
-| v1 | _ | _ | _ | prior best (n=1 was 0.083) |
-| v4-grown | _ | _ | _ | |
-| v5 new-only | _ | _ | _ | |
-| v6 full-grown | _ | _ | _ | |
+## Results — docvqa_mini n=4 binary@0.9 (CLEAN scaffold, 2026-06-08)
+| model | overall | submit-only | pass@4 | SC-4 | notes |
+|-------|---------|-------------|--------|------|-------|
+| **baseline (untrained 4B)** | **0.1897** | 0.286 (77) | 0.414 | 0.310 | fixed scaffold; the anchor |
+| **seqkd-clean-v5** | **0.1379** | 0.216 (74) | 0.345 | 0.172 | transfer-SFT (mmlb 245 traj) — **WORSE than baseline** |
+
+**VERDICT: transfer-SFT loses.** Same submit rate (77→74), worse answer quality
+(0.286→0.216) + SC-4 diversity collapse. Card: `results/clean-restart-mini-n4.md`.
+Full-val skipped (was gated on beating baseline). Old corrupted-scaffold v1–v6
+numbers are void.
 
 ## Honesty guardrail
 If the denoised eval shows **no SFT config clears baseline**, that is the finding —
 report it plainly (SFT at ceiling for this data scale; the runaway/data bottleneck
 dominates) rather than cherry-picking noise. A null result, well-measured, is a result.
+
+## NEXT PHASE — in-domain DocVQA trajectories (user, 2026-06-08)
+Goal: does training on **in-domain** (DocVQA) trajectories help — vs the MMLongBench
+out-of-domain transfer (clean_v5)? Isolates the domain gap. "See if it learns."
+
+Plan (after the current clean eval finishes):
+1. **Collect 27B-teacher trajectories on DocVQA val** (eval.py = collection, fixed
+   scaffold, n4) → outputs/runs/docvqa-collect. The 27B (≈0.4 on docvqa) yields more
+   anls=1.0 in-domain trajectories than the 4B would.
+2. Build clean SFT (make_clean_sft.py) → data/sft/indomain_v1.parquet.
+3. Train seqkd-indomain-v1 (LR2e-4 const), merge.
+4. Eval vs baseline + clean_v5 on docvqa_mini / full val.
+
+**LEAKAGE CAVEAT:** training on val trajectories + eval on val = optimistic (memorization),
+so the val number is a learnability UPPER BOUND, not generalization. Clean options:
+ (a) train on val/train.json (56Q/17 docs) → eval on val/heldout.json (24Q/8 docs, disjoint);
+ (b) train on all val → report only the official TEST submission.
+**CONFIRMED BY USER (2026-06-08): leaked full-val is intended — a learnability
+UPPER-BOUND of the current SFT setup** (train on the target's own trajectories, eval on
+the same val). Interpretation: if the 4B barely improves even with in-domain val training,
+the SFT *setup* is the limiter, not the domain gap. Generator = **27B teacher on full val**
+(highest-quality in-domain trajectories → strongest achievable upper bound; clean_v5
+self-RFT would be a weaker lower variant). NOT a generalization number — that needs test.
