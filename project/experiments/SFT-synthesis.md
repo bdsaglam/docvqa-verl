@@ -110,24 +110,47 @@ checkpointing every 5**, eval each on DocVQA (no leakage):
 just the undertrained dip; more epochs recover to ≈baseline, none exceed it. No checkpoint
 cleared the bar for a full-val promotion. Card: `results/mmlb-long-generalization.md`.
 
-## FINAL VERDICT — SFT investigation complete (comprehensive null)
-| variant | overall | vs baseline 0.190 |
-|--|--|--|
-| transfer undertrained (clean-v5, 3ep) | 0.138 | hurts |
-| transfer long (mmlb-long, 5–20ep) | ≈0.19–0.22 | ties |
-| in-domain undertrained (v1, 3ep) | 0.147 | hurts |
-| in-domain memorized+leaked (v2, 20ep) | 0.190 | ties |
+## ⚠️ CORRECTION (2026-06-10): the "null" was a MINI-SET ARTIFACT — SFT DOES help on full val
+All verdicts above were measured on **docvqa_mini (29 Q)**, which is underpowered
+(SE≈5%) and uses median-difficulty docs that flatter the untrained baseline. Running the
+**full 80-Q val** (the reportable set, n=4, paired) flips the transfer conclusion:
 
-**SFT on 27B-teacher CodeAct trajectories never beats the untrained 4B baseline** — any
-data source, any training length. Undertrained SFT *hurts* (collapses answer diversity);
-fully-fit SFT *ties*. The multi-turn agentic loop structurally defeats trajectory
-imitation: the model never sees its own rollout's observations during SFT. The
-scaffold/prompt fix (0.042→0.19) remains the only lever that has moved the metric.
+| 80Q full-val | overall | submit-only | pass@4 |
+|--|--|--|--|
+| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% |
+| mmlb-long ep20 (SFT, 20ep) | **20.6%** | 32.2% | 41.2% |
+| **Δ** | **+5.3** | +7.1 | +7.4 |
 
-**Redirect:** SeqKD/SFT is not the lever. Move to on-policy methods where the model
-learns from its *own* rollouts: (1) RL on answer-level ANLS reward (GRPO etc.), (2) OPD
-(dense per-token signal, avoids the answer-distribution collapse SFT causes here),
-(3) scaffold / per-turn-cap / long-doc-runaway control (where the residual loss lives).
+**Paired t-test Δoverall=+5.3%, SE 2.5%, t=2.09 (79 df), p≈0.04 — significant.**
+The SFT model is stable across sets (mini 21.6 ≈ full 20.6); the **baseline collapses on
+harder docs** (mini 19.0 → full 15.3). SFT's benefit = robustness on the harder
+distribution, invisible on the easy mini screen. Card: `results/mmlb-long-generalization.md`.
+
+## REVISED FINAL VERDICT
+| variant (eval set) | result |
+|--|--|
+| transfer undertrained (clean-v5, 3ep, mini) | 13.8% — hurts (undertrained) |
+| transfer long (mmlb-long ep20, **full val**) | **20.6% vs 15.3% baseline, +5.3, p≈0.04 — BEATS** |
+| in-domain memorized+leaked (v2, 20ep, mini-leaked) | 19.0% = mini-baseline — ties (leaked) |
+
+- **A sufficiently-trained (20ep) mmlb→DocVQA transfer SFT beats the untrained baseline
+  on the full val (+5.3 ANLS, p≈0.04).** SFT is a real, modest lever — NOT a null.
+- **Undertraining still hurts** (clean-v5 13.8%); the lift needs the full epoch budget.
+- The *in-domain memorization* result (v2 ties leaked-mini-baseline) still shows the
+  multi-turn loop limits trajectory-replay — but it did NOT mean "SFT never helps." The
+  transfer model lifts the *generalization* number. Earlier over-claim corrected.
+- **Caveats:** single eval per model; only ep20 tested on full val. **Confirmatory
+  full-val evals of ep5 + ep16 queued** to verify across the epoch curve.
+
+**Redirect (softened):** SFT gives a real +5.3 lift on the reportable set — a reasonable
+**warmup**, not a dead end. On-policy methods (RL on ANLS, OPD) remain the next lever to
+push further, with SFT as a viable cold-start.
+
+## Methodological lesson (load-bearing for the RL phase)
+**Screen on docvqa_mini, but CONFIRM verdicts on the full 80-Q val.** The 29-Q mini
+(SE≈5%, median-difficulty docs) flattered the baseline and produced a false null that
+survived four experiments. Any "X beats/ties baseline" claim from mini must be confirmed
+on full val before it goes in a report or drives a decision.
 
 ## Carry-forward lessons (scaffold-independent, still valid)
 - **/tmp PNG leak (FIXED `docvqa/sandbox.py`):** `batch_look` wrote a `delete=False` temp

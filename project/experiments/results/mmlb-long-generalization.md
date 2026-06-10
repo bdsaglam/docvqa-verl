@@ -27,31 +27,41 @@ DocVQA — **no leakage → real generalization curve**.
 | 20 ep | 0.006 | 21.6% | 30.5% |
 | **baseline** | — | **19.0%** | **28.6%** |
 
-## Verdict — null: transfer SFT plateaus at baseline, no generalization gain
-- The curve **bounces (20.7 → 14.7 → 19.0 → 21.6) within the ±5% noise floor** (29 Q,
-  σ≈28% → SE≈5%). Non-monotonic = noise around a flat line, not an epoch→score trend.
-- Pooling the three adequately-trained points (ep5/16/20 = **20.4%** over 348 rollouts,
-  SE≈1.5%) gives a ~1.4-pt nominal lift over baseline — **under 1 SE, not significant.**
-- The only real effect: clean-v5's **13.8% was undertraining** (loss-0.18 point); enough
-  epochs recover to ≈baseline but nothing exceeds it. No checkpoint clears the ~24% bar
-  for a full-val (80Q) promotion, so none was promoted.
+## Mini verdict (29 Q) — looked like a null, but the screen was UNDERPOWERED
+On docvqa_mini the curve bounces (20.7 → 14.7 → 19.0 → 21.6) within the ±5% noise floor
+(29 Q, σ≈28% → SE≈5%) and ep20 (21.6%) is statistically indistinguishable from baseline
+(19.0%). **This led to a premature "SFT ties baseline / null" conclusion — WRONG, see
+below.** The mini set is 1 *median*-difficulty doc per category, which flatters the
+untrained baseline and is too small to resolve a ~5-pt effect.
 
-## Conclusion — SFT investigation complete (consistent null across ALL variants)
-| variant | overall | vs baseline 19.0% |
-|---|---|---|
-| transfer undertrained (clean-v5, 3ep) | 13.8% | hurts |
-| transfer long (mmlb-long, 5-20ep) | ≈19-21% | ties |
-| in-domain undertrained (v1, 3ep) | 14.7% | hurts |
-| in-domain memorized+leaked (v2, 20ep) | 19.0% | ties |
+## ★ FULL-VAL (80Q) — the reportable result: ep20 SFT BEATS baseline (2026-06-10)
+Ran baseline + ep20 on the full 80-Q val (n=4, 27B VLM DP=3), paired per-question:
 
-**SFT on 27B-teacher CodeAct trajectories never beats the untrained 4B baseline** —
-in-domain or transfer, undertrained (hurts) or fully fit (ties). Memorizing the
-teacher's trajectories (train loss → ~0) does not transfer to free-rollout eval,
-because the multi-turn agentic loop feeds the model its *own* (different) VLM
-observations at inference — it can't replay a memorized trajectory. The scaffold/prompt
-fix (0.042→0.19) remains the only lever that has moved the metric.
+| 80Q full-val | overall | submit-only | pass@4 |
+|---|---|---|---|
+| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% |
+| **mmlb-long ep20 (SFT)** | **20.6%** | 32.2% | 41.2% |
+| **Δ** | **+5.3** | +7.1 | +7.4 |
 
-**Redirect (unchanged): SeqKD/SFT is not the lever.** Move to on-policy methods where
-the model learns from its own rollouts: RL on answer-level ANLS reward (GRPO etc.), or
-on-policy distillation (dense per-token signal, no answer-distribution collapse). The
-clean, comprehensive SFT null is a real result — it redirects the project's effort.
+**Paired t-test on per-question ANLS: Δ=+5.3%, SE 2.5%, t=2.09 (79 df), p≈0.04 —
+statistically significant.** All three metrics move the same way.
+
+**Why mini hid it:** the SFT model is *stable* across sets (mini 21.6% ≈ full 20.6%),
+but the **baseline collapses on the harder full distribution** (mini 19.0% → full 15.3%).
+SFT's benefit is **robustness on harder docs**, invisible on the easy/median mini set.
+
+## REVISED conclusion — SFT (sufficiently trained) DOES help, modestly
+- **A 20-epoch mmlb→DocVQA transfer SFT beats the untrained baseline on the full val:
+  20.6% vs 15.3%, +5.3 ANLS, paired p≈0.04.** Not a null.
+- **Undertraining still hurts** (clean-v5, 3ep, 13.8% on mini) — the benefit needs the
+  full epoch budget.
+- **Caveats:** single eval per model (one set of n=4); only ep20 tested on full val so
+  far (mini curve was non-monotonic). **Confirmatory full-val evals of ep5 + ep16 are
+  queued** to check robustness across the epoch curve.
+- The earlier "memorization doesn't transfer" framing was over-stated: it holds for the
+  *leaked in-domain* eval (v2 ties baseline on mini) but the *transfer* model does lift
+  the *generalization* number on the representative set.
+
+**Redirect still stands but softened:** SFT now gives a real, modest lift (+5.3 on full
+val). On-policy methods (RL on ANLS, OPD) remain the next lever to push further — SFT is
+a reasonable *warmup*, not a dead end.
