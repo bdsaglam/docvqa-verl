@@ -37,11 +37,9 @@ datasets:
     category: business_report
     tier: mid
     K: 150
-  - name: dude
-    questions: data/dude/val/questions.json
-    category: business_report
-    tier: hard
-    K: 150
+  # DUDE excluded for now (adapter_dude remains in prepare_data.py; re-add an
+  # entry here to bring it back). Heavy multi-GB downloads + replicated loader
+  # join made it the highest-risk adapter; revisit after the rest is validated.
   - name: slidevqa
     questions: data/slidevqa/train/questions.json
     category: slide
