@@ -416,6 +416,62 @@ def adapter_chartqa(split: str, split_dir: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: mapqa (nimapourjafar/mm_mapqa)
+# ---------------------------------------------------------------------------
+
+def _mapqa_qa_from_data(data) -> list[tuple[str, str]]:
+    """Extract all (question, answer) pairs from mm_mapqa's `data` field.
+
+    `data` is a list of turn dicts with keys {data, modality, role}: a leading
+    `modality == 'image'` turn (the image placeholder), then interleaved text
+    turns alternating role 'user' (question) / 'assistant' (answer). A single
+    row carries MANY Q/A pairs over one image, so we return every pair. Each
+    user text turn is paired with the next assistant text turn.
+    """
+    pairs: list[tuple[str, str]] = []
+    pending_q: str | None = None
+    for turn in data:
+        if turn.get("modality") != "text":
+            continue
+        role = turn.get("role")
+        text = str(turn.get("data", "")).strip()
+        if role == "user":
+            pending_q = text
+        elif role == "assistant" and pending_q is not None:
+            pairs.append((pending_q, text))
+            pending_q = None
+    return pairs
+
+
+def adapter_mapqa(split: str, split_dir: Path) -> list[dict]:
+    """Build docs/ and return raw rows for nimapourjafar/mm_mapqa.
+
+    Single ``train`` split. Each HF row is one map image carrying multiple Q/A
+    pairs; we materialize the image once and emit one row per Q/A pair.
+    """
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("nimapourjafar/mm_mapqa", split=split)
+    rows: list[dict] = []
+    for idx, r in enumerate(ds):
+        doc_id = f"mapqa_{split}_{idx}"
+        pairs = _mapqa_qa_from_data(r["data"])
+        if not pairs:
+            continue
+        _materialize_single_image_doc(
+            doc_id=doc_id, image=r["images"][0], category="maps",
+            dataset="mapqa", split=split, docs_dir=docs_dir)
+        doc_dir_abs = (docs_dir / doc_id).resolve()
+        for qi, (question, answer) in enumerate(pairs):
+            rows.append(_build_row(
+                dataset="mapqa", split=split, doc_id=doc_id,
+                question_id=f"{idx}_{qi}", question=question,
+                answer=answer or None, category="maps",
+                doc_dir_abs=doc_dir_abs))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
@@ -425,6 +481,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "docvqa-sp": adapter_docvqa_sp,
     "infographicvqa": adapter_infographicvqa,
     "chartqa": adapter_chartqa,
+    "mapqa": adapter_mapqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "mp-docvqa": adapter_mp_docvqa,

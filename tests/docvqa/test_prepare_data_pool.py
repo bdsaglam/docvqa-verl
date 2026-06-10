@@ -41,3 +41,25 @@ def test_gold_answer_single_vs_multi():
 def test_chartqa_label_to_answer():
     # ChartQA label is a list; _gold_answer_str over a 1-element list returns the bare string
     assert _gold_answer_str(["52.0"]) == "52.0"
+
+
+def test_mapqa_parser_extracts_question_and_answer():
+    # mm_mapqa `data` is a list of turn dicts with keys {data, modality, role}:
+    # a leading image turn, then interleaved text user(question)/assistant(answer)
+    # turns. Multiple Q/A pairs per row -> parser returns ALL pairs.
+    from docvqa.scripts.prepare_data import _mapqa_qa_from_data
+
+    sample = [
+        {"data": "0", "modality": "image", "role": "user"},
+        {"data": "Which state has the highest value?\nShort answer required.",
+         "modality": "text", "role": "user"},
+        {"data": "Texas.", "modality": "text", "role": "assistant"},
+        {"data": "Is Ohio higher than Iowa?\nBe succinct.",
+         "modality": "text", "role": "user"},
+        {"data": "No.", "modality": "text", "role": "assistant"},
+    ]
+    pairs = _mapqa_qa_from_data(sample)
+    assert pairs == [
+        ("Which state has the highest value?\nShort answer required.", "Texas."),
+        ("Is Ohio higher than Iowa?\nBe succinct.", "No."),
+    ]
