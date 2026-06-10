@@ -1,8 +1,9 @@
 # Curated short-doc DocVQA-family training pool.
 # `questions` = the prepared prompt set (run prepare_data.py to materialize).
 # K = sample size per dataset for optional teacher collection; tier = curriculum difficulty.
-# All categories are among DocVQA-2026's 8 (business_report, infographics,
-# maps, science_poster, slide) so the agent loop's per-category prompting applies.
+# Categories used are 5 of DocVQA-2026's 8 (business_report, infographics, maps,
+# science_poster, slide); comics/engineering_drawing/science_paper have no
+# suitable short-doc source. The agent loop's per-category prompting applies.
 datasets:
   # Phase 1 — native single-page (fast rollouts)
   - name: docvqa-sp

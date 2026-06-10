@@ -65,6 +65,20 @@ def test_compute_score_wrong_submission():
     assert info["score"] == 0.0
 
 
+def test_compute_score_handles_multi_alias_ground_truth():
+    from docvqa.reward import compute_score
+    # multi-alias gold stored as repr(list); a correct answer must score ~1.0
+    gt = repr(["paris", "Paris"])
+    out = compute_score(ground_truth=gt, extra_info={"submitted_answer": "Paris", "num_turns": 1})
+    assert out["anls"] >= 0.99, out
+    # single bare string still works
+    out2 = compute_score(ground_truth="Paris", extra_info={"submitted_answer": "Paris", "num_turns": 1})
+    assert out2["anls"] >= 0.99, out2
+    # a clearly wrong answer stays low
+    out3 = compute_score(ground_truth=gt, extra_info={"submitted_answer": "London", "num_turns": 1})
+    assert out3["anls"] < 0.5, out3
+
+
 def test_compute_score_passes_through_metadata():
     info = compute_score(
         data_source="docvqa", solution_str="ignored",

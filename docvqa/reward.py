@@ -32,6 +32,7 @@ twice over (group-relative x concave). Source: Cursor "Composer 2" technical rep
 """
 from __future__ import annotations
 
+import ast
 import math
 from typing import Any
 
@@ -46,6 +47,18 @@ LENGTH_PENALTY_Q = 1.0
 
 # Subtract this * (multi_block_turns + empty_output_turns) from the score (0 disables).
 FORMAT_PENALTY_PER_VIOLATION = 0.0
+
+
+def _gt_candidates(ground_truth) -> list[str]:
+    """Multi-alias gold may be stored as repr([...]); return the candidate list."""
+    s = str(ground_truth)
+    try:
+        v = ast.literal_eval(s)
+        if isinstance(v, (list, tuple)) and v:
+            return [str(c) for c in v]
+    except (ValueError, SyntaxError):
+        pass
+    return [s]
 
 
 def _concave_length_cost(x: float, k: float, q: float) -> float:
@@ -88,7 +101,7 @@ def compute_score(
     if submitted is None or submitted == "":
         raw_anls = 0.0
     else:
-        raw_anls = float(get_anls(str(submitted), str(ground_truth)))
+        raw_anls = max(float(get_anls(str(submitted), c)) for c in _gt_candidates(ground_truth))
 
     num_turns = float(extra.get("num_turns") or 0)
     length_penalty = LENGTH_PENALTY_COEF * _concave_length_cost(

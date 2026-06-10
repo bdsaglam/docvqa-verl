@@ -460,8 +460,12 @@ def adapter_mapqa(split: str, split_dir: Path) -> list[dict]:
         pairs = _mapqa_qa_from_data(r["data"])
         if not pairs:
             continue
+        imgs = r.get("images") or []
+        if not imgs:
+            continue
+        image = imgs[0]
         _materialize_single_image_doc(
-            doc_id=doc_id, image=r["images"][0], category="maps",
+            doc_id=doc_id, image=image, category="maps",
             dataset="mapqa", split=split, docs_dir=docs_dir)
         doc_dir_abs = (docs_dir / doc_id).resolve()
         for qi, (question, answer) in enumerate(pairs):
@@ -612,7 +616,7 @@ def _tatdqa_pages_for_uid(unzip_root: Path, uid: str) -> list[Path]:
             return int(p.stem.rsplit("_", 1)[1])
         except (IndexError, ValueError):
             return 0
-    return sorted(unzip_root.glob(f"{uid}_*.png"), key=_n)
+    return sorted(unzip_root.rglob(f"{uid}_*.png"), key=_n)
 
 
 def adapter_tatdqa(split: str, split_dir: Path) -> list[dict]:
@@ -635,6 +639,10 @@ def adapter_tatdqa(split: str, split_dir: Path) -> list[dict]:
         doc = entry["doc"]
         doc_id = str(doc["uid"])
         page_srcs = _tatdqa_pages_for_uid(unzip_root, doc_id)
+        if not page_srcs:
+            print(f"[tatdqa] no page images for uid {doc_id}; skipping doc",
+                  file=sys.stderr)
+            continue
         doc_out = docs_dir / doc_id / "pages"
         doc_out.mkdir(parents=True, exist_ok=True)
         for i, src in enumerate(page_srcs):
@@ -775,15 +783,15 @@ def adapter_dude(split: str, split_dir: Path, max_pages: int = 2) -> list[dict]:
                 shutil.rmtree(docs_dir / doc_id, ignore_errors=True)
                 n_total = -1  # mark as failed so all its questions are dropped
             page_counts[doc_id] = n_total
-            if 0 <= n_total <= max_pages:
+            if 1 <= n_total <= max_pages:
                 (docs_dir / doc_id / "metadata.json").write_text(json.dumps({
                     "doc_id": doc_id, "num_pages": n_total,
                     "doc_category": "business_report", "dataset": "dude",
                     "split": split,
                 }, indent=2))
         n_total = page_counts[doc_id]
-        if not (0 <= n_total <= max_pages):
-            continue  # over the page cap, or failed to render
+        if not (1 <= n_total <= max_pages):
+            continue  # 0-page / over the page cap / failed to render
         rows.append(_build_row(
             dataset="dude", split=split, doc_id=doc_id,
             question_id=str(a["questionId"]), question=a["question"],
