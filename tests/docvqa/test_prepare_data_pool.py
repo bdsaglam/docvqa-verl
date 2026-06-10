@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 
 from docvqa.scripts.prepare_data import _materialize_single_image_doc
+from docvqa.scripts.prepare_data import _gold_answer_str
 
 
 def test_single_image_doc_saves_one_page_and_metadata(tmp_path):
@@ -28,3 +29,10 @@ def test_single_image_doc_is_idempotent(tmp_path):
     _materialize_single_image_doc(doc_id="d1", image=img, category="maps",
                                   dataset="mapqa", split="train", docs_dir=docs_dir)
     assert list((docs_dir / "d1" / "pages").glob("*.png")) == [docs_dir / "d1" / "pages" / "page_0.png"]
+
+
+def test_gold_answer_single_vs_multi():
+    assert _gold_answer_str(["paris"]) == "paris"
+    assert _gold_answer_str(["paris", "Paris"]) == repr(["paris", "Paris"])
+    assert _gold_answer_str([]) is None
+    assert _gold_answer_str("paris") == "paris"

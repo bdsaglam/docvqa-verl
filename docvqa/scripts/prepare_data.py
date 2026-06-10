@@ -328,12 +328,48 @@ def adapter_mmlongbench_doc(split: str, split_dir: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: docvqa-sp (lmms-lab/DocVQA, single-page)
+# ---------------------------------------------------------------------------
+
+def _gold_answer_str(answers) -> str | None:
+    """Single alias -> bare str; multiple -> repr(list) for the ast.literal_eval scorer."""
+    if isinstance(answers, str):
+        return answers
+    if not answers:
+        return None
+    answers = [str(a) for a in answers]
+    return answers[0] if len(answers) == 1 else repr(answers)
+
+
+def adapter_docvqa_sp(split: str, split_dir: Path) -> list[dict]:
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("lmms-lab/DocVQA", "DocVQA", split=split)
+    seen_docs: set[str] = set()
+    rows: list[dict] = []
+    for r in ds:
+        doc_id = str(r["docId"])
+        if doc_id not in seen_docs:
+            _materialize_single_image_doc(
+                doc_id=doc_id, image=r["image"], category="business_report",
+                dataset="docvqa-sp", split=split, docs_dir=docs_dir)
+            seen_docs.add(doc_id)
+        rows.append(_build_row(
+            dataset="docvqa-sp", split=split, doc_id=doc_id,
+            question_id=str(r["questionId"]), question=r["question"],
+            answer=_gold_answer_str(r.get("answers")), category="business_report",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
 ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "docvqa-2026": adapter_docvqa_2026,
     "mmlongbench-doc": adapter_mmlongbench_doc,
+    "docvqa-sp": adapter_docvqa_sp,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "mp-docvqa": adapter_mp_docvqa,
