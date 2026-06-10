@@ -95,3 +95,16 @@ def test_tatdqa_answer_str_handles_list_scalar_and_scale():
     assert _tatdqa_answer_str([], "") is None
     assert _tatdqa_answer_str("", "") is None
     assert _tatdqa_answer_str(None, "") is None
+
+
+def test_slidevqa_single_evidence_selection():
+    from PIL import Image
+    from docvqa.scripts.prepare_data import _slidevqa_evidence_image
+
+    row = {f"page_{i}": Image.new("RGB", (4, 4)) for i in range(1, 6)}
+    row["evidence_pages"] = [3]
+    assert _slidevqa_evidence_image(row) is not None     # returns the single evidence slide
+    row["evidence_pages"] = [2, 4]
+    assert _slidevqa_evidence_image(row) is None          # multi-evidence -> skip
+    row["evidence_pages"] = []
+    assert _slidevqa_evidence_image(row) is None

@@ -793,6 +793,49 @@ def adapter_dude(split: str, split_dir: Path, max_pages: int = 2) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: slidevqa (NTT-hil-insight/SlideVQA), single-evidence slide
+# ---------------------------------------------------------------------------
+#
+# Schema (probed via streaming, train split):
+#   keys = deck_name, deck_url, page_1..page_20 (PIL columns), qa_id (int),
+#          question, answer, arithmetic_expression, evidence_pages (list[int])
+# `evidence_pages` is 1-BASED: value 4 -> column "page_4" (verified — page_4 is a
+# non-None JpegImageFile). Decks have ~20 slides; we keep ONLY questions
+# answerable from a SINGLE evidence slide and materialize just that one slide as
+# a one-page doc (cheap rollouts). Multi-evidence (len != 1) questions are
+# dropped.
+
+def _slidevqa_evidence_image(row):
+    """Return the single evidence slide PIL (1-based page_N), or None if not single-evidence."""
+    ev = row.get("evidence_pages") or []
+    if len(ev) != 1:
+        return None
+    return row.get(f"page_{int(ev[0])}")
+
+
+def adapter_slidevqa(split: str, split_dir: Path) -> list[dict]:
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("NTT-hil-insight/SlideVQA", split=split)
+    rows: list[dict] = []
+    for r in ds:
+        img = _slidevqa_evidence_image(r)
+        if img is None:
+            continue
+        ev = int(r["evidence_pages"][0])
+        doc_id = f"{r['deck_name']}__p{ev}"
+        _materialize_single_image_doc(
+            doc_id=doc_id, image=img, category="slide",
+            dataset="slidevqa", split=split, docs_dir=docs_dir)
+        rows.append(_build_row(
+            dataset="slidevqa", split=split, doc_id=doc_id,
+            question_id=str(r["qa_id"]), question=r["question"],
+            answer=_gold_answer_str(r.get("answer")), category="slide",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
@@ -806,6 +849,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "mp-docvqa": adapter_mp_docvqa,
     "tatdqa": adapter_tatdqa,
     "dude": adapter_dude,
+    "slidevqa": adapter_slidevqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "infographic-vqa": adapter_infographic_vqa,
