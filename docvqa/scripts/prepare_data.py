@@ -163,6 +163,24 @@ def _materialize_docvqa_2026_doc(row: Any, split: str, docs_dir: Path) -> None:
     (doc_out / "metadata.json").write_text(json.dumps(meta, indent=2))
 
 
+def _materialize_single_image_doc(
+    *, doc_id: str, image: Image.Image, category: str,
+    dataset: str, split: str, docs_dir: Path,
+) -> Path:
+    """Save a one-page doc dir for a single-image dataset. Returns abs doc_dir."""
+    doc_out = docs_dir / doc_id
+    pages_dir = doc_out / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    out_path = pages_dir / "page_0.png"
+    if not out_path.exists():
+        image.convert("RGB").save(out_path, format="PNG")
+    (doc_out / "metadata.json").write_text(json.dumps({
+        "doc_id": doc_id, "num_pages": 1, "doc_category": category,
+        "dataset": dataset, "split": split,
+    }, indent=2))
+    return doc_out.resolve()
+
+
 def adapter_docvqa_2026(split: str, split_dir: Path) -> list[dict]:
     """Build docs/ and return raw rows for VLR-CVC/DocVQA-2026."""
     docs_dir = split_dir / "docs"
