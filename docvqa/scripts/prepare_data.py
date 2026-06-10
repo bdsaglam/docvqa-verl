@@ -34,6 +34,7 @@ import ast
 import json
 import shutil
 import sys
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -540,6 +541,121 @@ def adapter_mp_docvqa(split: str, split_dir: Path, max_pages: int = 3) -> list[d
 
 
 # ---------------------------------------------------------------------------
+# Adapter: tatdqa (next-tat/TAT-DQA), financial report page images
+# ---------------------------------------------------------------------------
+#
+# Schema (probed from tatdqa_dataset_dev.json — a JSON *list* of entries):
+#   entry = {
+#     "doc": {"uid": <hex doc id>, "page": <int anchor page>, "source": <pdf name>},
+#     "questions": [{"uid", "question", "answer", "answer_type", "scale", ...}, ...],
+#   }
+# `doc.page` is the entry's anchor page number (1 or 2), NOT a page count and NOT
+# a list of files. Page images live in the docs zip under "<split>/<uid>_<n>.png"
+# (n = 1-based page index); ~15% of docs span two pages (uid_1.png + uid_2.png),
+# so we materialize ALL pages for a uid sorted by n, not just `doc.page`.
+#
+# `answer` is heterogeneous: list[str] (single/multi span), int/float (numeric
+# reasoning), or str. `scale` (e.g. "percent", "thousand") is part of the gold
+# for numeric answers, so we fold it into the answer string before scoring.
+
+_TATDQA_REPO = "next-tat/TAT-DQA"
+
+
+def _tatdqa_answer_str(answer, scale) -> str | None:
+    """Normalize a TAT-DQA answer (+optional scale) to the canonical gold string.
+
+    Handles list[str] (multi-span -> repr(list) for the ast.literal_eval scorer),
+    scalar int/float, and str. A non-empty `scale` is appended to each element
+    (TAT-DQA's gold includes the scale, e.g. answer 105 + scale "percent").
+    """
+    scale = (str(scale).strip() if scale not in (None, "") else "")
+
+    def _one(v) -> str:
+        s = str(v).strip()
+        return f"{s} {scale}".strip() if scale else s
+
+    if isinstance(answer, list):
+        items = [_one(a) for a in answer if str(a).strip() != ""]
+        if not items:
+            return None
+        return items[0] if len(items) == 1 else repr(items)
+    if answer is None or (isinstance(answer, str) and answer.strip() == ""):
+        return None
+    return _one(answer)
+
+
+def _tatdqa_download_and_unzip(split: str, docs_dir: Path) -> Path:
+    """Download tatdqa_docs_<split>.zip into docs_dir/_raw and return the unzip root.
+
+    Heavy (the docs zip is large) — only called during an actual prepare run, not
+    during probing.
+    """
+    from huggingface_hub import hf_hub_download
+
+    raw = docs_dir / "_raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    zip_path = hf_hub_download(_TATDQA_REPO, f"tatdqa_docs_{split}.zip",
+                               repo_type="dataset")
+    root = raw / split
+    if not root.exists():
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(root)
+    # The zip contains a top-level "<split>/" folder; descend into it if present.
+    inner = root / split
+    return inner if inner.is_dir() else root
+
+
+def _tatdqa_pages_for_uid(unzip_root: Path, uid: str) -> list[Path]:
+    """All "<uid>_<n>.png" page files for a doc, sorted by the numeric suffix n."""
+    def _n(p: Path) -> int:
+        try:
+            return int(p.stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            return 0
+    return sorted(unzip_root.glob(f"{uid}_*.png"), key=_n)
+
+
+def adapter_tatdqa(split: str, split_dir: Path) -> list[dict]:
+    """Build docs/ and return raw rows for next-tat/TAT-DQA.
+
+    Pool split ``dev`` maps to TAT-DQA's ``dev`` (the only released split with
+    gold answers besides train; test gold is in a separate file).
+    """
+    from huggingface_hub import hf_hub_download
+
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    unzip_root = _tatdqa_download_and_unzip(split, docs_dir)
+    qa_path = hf_hub_download(_TATDQA_REPO, f"tatdqa_dataset_{split}.json",
+                             repo_type="dataset")
+    data = json.load(open(qa_path))
+
+    rows: list[dict] = []
+    for entry in data:
+        doc = entry["doc"]
+        doc_id = str(doc["uid"])
+        page_srcs = _tatdqa_pages_for_uid(unzip_root, doc_id)
+        doc_out = docs_dir / doc_id / "pages"
+        doc_out.mkdir(parents=True, exist_ok=True)
+        for i, src in enumerate(page_srcs):
+            dst = doc_out / f"page_{i}.png"
+            if not dst.exists():
+                Image.open(src).convert("RGB").save(dst, format="PNG")
+        (docs_dir / doc_id / "metadata.json").write_text(json.dumps({
+            "doc_id": doc_id, "num_pages": len(page_srcs),
+            "doc_category": "business_report", "dataset": "tatdqa", "split": split,
+        }, indent=2))
+        doc_dir_abs = (docs_dir / doc_id).resolve()
+        for q in entry["questions"]:
+            rows.append(_build_row(
+                dataset="tatdqa", split=split, doc_id=doc_id,
+                question_id=str(q["uid"]), question=q["question"],
+                answer=_tatdqa_answer_str(q.get("answer"), q.get("scale")),
+                category="business_report", doc_dir_abs=doc_dir_abs))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
@@ -551,6 +667,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "chartqa": adapter_chartqa,
     "mapqa": adapter_mapqa,
     "mp-docvqa": adapter_mp_docvqa,
+    "tatdqa": adapter_tatdqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "infographic-vqa": adapter_infographic_vqa,

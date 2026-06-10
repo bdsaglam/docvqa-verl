@@ -71,3 +71,27 @@ def test_page_count_handles_list_and_stringified():
     assert _page_count(["p0", "p1", "p2"]) == 3
     assert _page_count("['p0', 'p1']") == 2
     assert _page_count(None) == 0
+
+
+def test_tatdqa_answer_str_handles_list_scalar_and_scale():
+    # TAT-DQA answers are heterogeneous: list[str] (span/multi-span), int/float
+    # (numeric reasoning), or str. `scale` (e.g. "percent") is folded into gold.
+    from docvqa.scripts.prepare_data import _tatdqa_answer_str
+
+    # single-span list -> bare string
+    assert _tatdqa_answer_str(["55%"], "") == "55%"
+    # multi-span list -> repr(list) for the ast.literal_eval scorer
+    assert _tatdqa_answer_str(["55%", "50%"], "") == repr(["55%", "50%"])
+    # scalar numeric + scale -> "<value> <scale>"
+    assert _tatdqa_answer_str(105, "percent") == "105 percent"
+    assert _tatdqa_answer_str(2.5, "thousand") == "2.5 thousand"
+    # scalar numeric, no scale
+    assert _tatdqa_answer_str(7, "") == "7"
+    # plain string passthrough
+    assert _tatdqa_answer_str("net income", "") == "net income"
+    # scale applied to each list element
+    assert _tatdqa_answer_str(["1.0", "2.0"], "million") == repr(["1.0 million", "2.0 million"])
+    # empties -> None
+    assert _tatdqa_answer_str([], "") is None
+    assert _tatdqa_answer_str("", "") is None
+    assert _tatdqa_answer_str(None, "") is None
