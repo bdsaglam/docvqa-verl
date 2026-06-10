@@ -656,6 +656,143 @@ def adapter_tatdqa(split: str, split_dir: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: dude (jordyvl/DUDE_loader), multi-page PDFs, keep <= 2 pages
+# ---------------------------------------------------------------------------
+#
+# DUDE ships as an HF *loading script* (DUDE_loader.py) — NOT a parquet dataset.
+# `datasets >= 3` removed loading-script support entirely, so
+# `load_dataset('jordyvl/DUDE_loader', ..., trust_remote_code=True)` raises
+# "Dataset scripts are no longer supported" in this env (datasets 4.8.5). We
+# therefore replicate the loader's join ourselves from its two raw sources:
+#   1. annotations JSON (Zenodo "2023-03-23_DUDE_gt_test_PUBLIC.json") — a list
+#      (or {"data": [...]}) of records with the fields the loader's `_info()`
+#      declares: docId, questionId, question, answers (list[str]), answer_type,
+#      data_split. (Verified field names against data/DUDE_dataset-sample_gt.json.)
+#   2. the binaries tarball (data/DUDE_train-val-test_binaries.tar.gz) which
+#      extracts PDFs to "PDF/<split>/<docId>.pdf" (per the loader's retrieve_doc).
+# Documents are multi-page PDFs → rasterize with pypdfium2; keep docs with
+# `<= max_pages` (default 2) pages, deciding from the rendered page count.
+
+_DUDE_REPO = "jordyvl/DUDE_loader"
+_DUDE_ANNOTATIONS_URL = (
+    "https://zenodo.org/record/7763635/files/"
+    "2023-03-23_DUDE_gt_test_PUBLIC.json?download=1"
+)
+# Mirrors the loader's SKIP_DOC_IDS (corrupt / placeholder docs).
+_DUDE_SKIP_DOC_IDS = {
+    "nan",
+    "ef03364aa27a0987c9870472e312aceb",
+    "5c5a5880e6a73b4be2315d506ab0b15b",
+}
+
+
+def _render_pdf_capped(pdf_path: Path, out_dir: Path, max_pages: int,
+                       dpi: int = 150) -> int:
+    """Render up to max_pages pages; return the PDF's TOTAL page count.
+
+    Renders only when n_total <= max_pages (otherwise the doc is over the cap
+    and will be dropped — no point rasterizing). Idempotent. Mirrors
+    `_mmlb_render_pdf` but reports the total count so the caller can filter.
+    """
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(str(pdf_path))
+    n_total = len(pdf)
+    if n_total <= max_pages:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        scale = dpi / 72.0
+        for i in range(n_total):
+            png = out_dir / f"page_{i}.png"
+            if not png.exists():
+                pdf[i].render(scale=scale).to_pil().save(
+                    png, format="PNG", optimize=True)
+    pdf.close()
+    return n_total
+
+
+def _dude_load_annotations(split: str) -> list[dict]:
+    """Fetch the DUDE GT annotations and return records for one split.
+
+    Heavy-ish (one JSON download from Zenodo) — only called during a real run.
+    """
+    import urllib.request
+
+    with urllib.request.urlopen(_DUDE_ANNOTATIONS_URL) as resp:
+        ann = json.load(resp)
+    records = ann["data"] if isinstance(ann, dict) and "data" in ann else ann
+    # train/val match exactly; test uses substring (test, test2) per the loader.
+    if split in ("train", "val"):
+        return [r for r in records if r.get("data_split") == split]
+    return [r for r in records if split in str(r.get("data_split", ""))]
+
+
+def _dude_extract_binaries(docs_dir: Path) -> Path:
+    """Download + extract the DUDE binaries tarball; return the extraction root.
+
+    Heavy (multi-GB tarball of all PDFs) — only called during a real run.
+    PDFs live under "<root>/PDF/<split>/<docId>.pdf".
+    """
+    import tarfile
+    from huggingface_hub import hf_hub_download
+
+    raw = docs_dir / "_raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    root = raw / "binaries"
+    if not root.exists():
+        tar_path = hf_hub_download(
+            _DUDE_REPO, "data/DUDE_train-val-test_binaries.tar.gz",
+            repo_type="dataset")
+        with tarfile.open(tar_path) as tf:
+            tf.extractall(root)
+    return root
+
+
+def adapter_dude(split: str, split_dir: Path, max_pages: int = 2) -> list[dict]:
+    """Build docs/ and return raw rows for jordyvl/DUDE_loader (<= max_pages pp).
+
+    Replicates the (no-longer-runnable) loading script's join: annotations JSON
+    × extracted PDF binaries. One annotation record per (doc, question).
+    """
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    annotations = _dude_load_annotations(split)
+    bin_root = _dude_extract_binaries(docs_dir)
+
+    page_counts: dict[str, int] = {}  # doc_id -> total pages (cap decision cache)
+    rows: list[dict] = []
+    for a in annotations:
+        doc_id = str(a["docId"])
+        if doc_id in _DUDE_SKIP_DOC_IDS:
+            continue
+        if doc_id not in page_counts:
+            pdf_path = bin_root / "PDF" / split / f"{doc_id}.pdf"
+            try:
+                n_total = _render_pdf_capped(
+                    pdf_path, docs_dir / doc_id / "pages", max_pages)
+            except Exception as e:
+                print(f"[dude] SKIP {doc_id}: {type(e).__name__}: {e}",
+                      file=sys.stderr)
+                shutil.rmtree(docs_dir / doc_id, ignore_errors=True)
+                n_total = -1  # mark as failed so all its questions are dropped
+            page_counts[doc_id] = n_total
+            if 0 <= n_total <= max_pages:
+                (docs_dir / doc_id / "metadata.json").write_text(json.dumps({
+                    "doc_id": doc_id, "num_pages": n_total,
+                    "doc_category": "business_report", "dataset": "dude",
+                    "split": split,
+                }, indent=2))
+        n_total = page_counts[doc_id]
+        if not (0 <= n_total <= max_pages):
+            continue  # over the page cap, or failed to render
+        rows.append(_build_row(
+            dataset="dude", split=split, doc_id=doc_id,
+            question_id=str(a["questionId"]), question=a["question"],
+            answer=_gold_answer_str(a.get("answers")), category="business_report",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
@@ -668,6 +805,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "mapqa": adapter_mapqa,
     "mp-docvqa": adapter_mp_docvqa,
     "tatdqa": adapter_tatdqa,
+    "dude": adapter_dude,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "infographic-vqa": adapter_infographic_vqa,
