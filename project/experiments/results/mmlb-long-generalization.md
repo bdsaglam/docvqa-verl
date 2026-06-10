@@ -34,30 +34,35 @@ On docvqa_mini the curve bounces (20.7 → 14.7 → 19.0 → 21.6) within the ±
 below.** The mini set is 1 *median*-difficulty doc per category, which flatters the
 untrained baseline and is too small to resolve a ~5-pt effect.
 
-## ★ FULL-VAL (80Q) — the reportable result: ep20 SFT BEATS baseline (2026-06-10)
-Ran baseline + ep20 on the full 80-Q val (n=4, 27B VLM DP=3), paired per-question:
+## ★ FULL-VAL (80Q) — the reportable result: training-monotonic lift (2026-06-10/11)
+Ran baseline + ep16 + ep20 on the full 80-Q val (n=4, 27B VLM DP=3), paired per-question
+(ep5 intentionally skipped):
 
-| 80Q full-val | overall | submit-only | pass@4 |
-|---|---|---|---|
-| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% |
-| **mmlb-long ep20 (SFT)** | **20.6%** | 32.2% | 41.2% |
-| **Δ** | **+5.3** | +7.1 | +7.4 |
+| 80Q full-val | overall | submit-only | pass@4 | Δ overall | paired t |
+|---|---|---|---|---|---|
+| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% | — | — |
+| mmlb-long ep16 (16 ep) | 17.2% | 26.7% | 36.2% | +1.9 | 0.74 (n.s.) |
+| **mmlb-long ep20 (20 ep)** | **20.6%** | 32.2% | 41.2% | **+5.3** | **2.09 (p≈0.04)** |
+| pooled (ep16+ep20) | — | — | — | +3.6 | 1.65 (p≈0.10) |
 
-**Paired t-test on per-question ANLS: Δ=+5.3%, SE 2.5%, t=2.09 (79 df), p≈0.04 —
-statistically significant.** All three metrics move the same way.
+**Training-monotonic lift over baseline:** 3ep (clean-v5, mini) hurts → 16ep +1.9 (n.s.)
+→ 20ep +5.3 (**significant, p≈0.04**). Both trained checkpoints exceed baseline; the lift
+grows with training; only the fully-trained ep20 reaches individual significance. Pooled
+it's a trend (+3.6, p≈0.10), not significant at 0.05.
 
 **Why mini hid it:** the SFT model is *stable* across sets (mini 21.6% ≈ full 20.6%),
 but the **baseline collapses on the harder full distribution** (mini 19.0% → full 15.3%).
 SFT's benefit is **robustness on harder docs**, invisible on the easy/median mini set.
 
-## REVISED conclusion — SFT (sufficiently trained) DOES help, modestly
-- **A 20-epoch mmlb→DocVQA transfer SFT beats the untrained baseline on the full val:
-  20.6% vs 15.3%, +5.3 ANLS, paired p≈0.04.** Not a null.
-- **Undertraining still hurts** (clean-v5, 3ep, 13.8% on mini) — the benefit needs the
-  full epoch budget.
-- **Caveats:** single eval per model (one set of n=4); only ep20 tested on full val so
-  far (mini curve was non-monotonic). **Confirmatory full-val evals of ep5 + ep16 are
-  queued** to check robustness across the epoch curve.
+## CONCLUSION — SFT (sufficiently trained) gives a real but MODEST lift
+- **The 20-epoch transfer checkpoint significantly beats the untrained baseline on the
+  full val (20.6% vs 15.3%, +5.3, paired p≈0.04).** Not a null.
+- The effect is **training-dependent and small**: 16ep is positive but not significant
+  (+1.9), pooled is a trend (+3.6, p≈0.10). Undertraining (3ep) hurts.
+- **Confidence caveat:** single eval per checkpoint at n=4. ep20's p=0.04 is suggestive,
+  not bulletproof, given ep16 is weaker; a tight claim needs higher n (e.g. n=8) or
+  multiple seeds. Defensible report claim: *"a modest, training-dependent SFT improvement,
+  significant for the best checkpoint."*
 - The earlier "memorization doesn't transfer" framing was over-stated: it holds for the
   *leaked in-domain* eval (v2 ties baseline on mini) but the *transfer* model does lift
   the *generalization* number on the representative set.

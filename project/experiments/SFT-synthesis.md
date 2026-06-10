@@ -115,36 +115,41 @@ All verdicts above were measured on **docvqa_mini (29 Q)**, which is underpowere
 (SE≈5%) and uses median-difficulty docs that flatter the untrained baseline. Running the
 **full 80-Q val** (the reportable set, n=4, paired) flips the transfer conclusion:
 
-| 80Q full-val | overall | submit-only | pass@4 |
-|--|--|--|--|
-| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% |
-| mmlb-long ep20 (SFT, 20ep) | **20.6%** | 32.2% | 41.2% |
-| **Δ** | **+5.3** | +7.1 | +7.4 |
+Full 80-Q val (reportable set, n=4, paired per-question; ep5 skipped):
 
-**Paired t-test Δoverall=+5.3%, SE 2.5%, t=2.09 (79 df), p≈0.04 — significant.**
+| 80Q full-val | overall | submit-only | pass@4 | Δ overall | paired t |
+|--|--|--|--|--|--|
+| baseline (untrained 4B) | **15.3%** | 25.1% | 33.8% | — | — |
+| mmlb-long ep16 (16ep) | 17.2% | 26.7% | 36.2% | +1.9 | 0.74 (n.s.) |
+| **mmlb-long ep20 (20ep)** | **20.6%** | 32.2% | 41.2% | **+5.3** | **2.09 (p≈0.04)** |
+| pooled (ep16+ep20) | — | — | — | +3.6 | 1.65 (p≈0.10) |
+
+**Training-monotonic lift:** 3ep hurts → 16ep +1.9 (n.s.) → 20ep +5.3 (**p≈0.04**).
 The SFT model is stable across sets (mini 21.6 ≈ full 20.6); the **baseline collapses on
 harder docs** (mini 19.0 → full 15.3). SFT's benefit = robustness on the harder
 distribution, invisible on the easy mini screen. Card: `results/mmlb-long-generalization.md`.
 
-## REVISED FINAL VERDICT
+## REVISED FINAL VERDICT — SFT gives a real but MODEST lift (not a null)
 | variant (eval set) | result |
 |--|--|
 | transfer undertrained (clean-v5, 3ep, mini) | 13.8% — hurts (undertrained) |
-| transfer long (mmlb-long ep20, **full val**) | **20.6% vs 15.3% baseline, +5.3, p≈0.04 — BEATS** |
+| transfer 16ep (mmlb-long, **full val**) | 17.2% vs 15.3%, +1.9 — above, n.s. |
+| transfer 20ep (mmlb-long, **full val**) | **20.6% vs 15.3%, +5.3, p≈0.04 — BEATS** |
 | in-domain memorized+leaked (v2, 20ep, mini-leaked) | 19.0% = mini-baseline — ties (leaked) |
 
-- **A sufficiently-trained (20ep) mmlb→DocVQA transfer SFT beats the untrained baseline
-  on the full val (+5.3 ANLS, p≈0.04).** SFT is a real, modest lever — NOT a null.
-- **Undertraining still hurts** (clean-v5 13.8%); the lift needs the full epoch budget.
-- The *in-domain memorization* result (v2 ties leaked-mini-baseline) still shows the
-  multi-turn loop limits trajectory-replay — but it did NOT mean "SFT never helps." The
-  transfer model lifts the *generalization* number. Earlier over-claim corrected.
-- **Caveats:** single eval per model; only ep20 tested on full val. **Confirmatory
-  full-val evals of ep5 + ep16 queued** to verify across the epoch curve.
+- **The 20-epoch mmlb→DocVQA transfer SFT significantly beats the untrained baseline on
+  the full val (+5.3 ANLS, p≈0.04).** SFT is a real lever — NOT a null.
+- But the effect is **modest and training-dependent**: 16ep is positive but n.s. (+1.9),
+  pooled is a trend (+3.6, p≈0.10), undertraining (3ep) hurts. **Confidence caveat:**
+  single eval/checkpoint at n=4 — ep20's p=0.04 is suggestive, not bulletproof (ep16
+  weaker); a tight claim needs higher n or seeds.
+- The *in-domain memorization* result (v2 ties leaked-mini-baseline) shows the multi-turn
+  loop limits trajectory-*replay* — but it did NOT mean "SFT never helps." The transfer
+  model lifts the *generalization* number. Earlier "comprehensive null" over-claim corrected.
 
-**Redirect (softened):** SFT gives a real +5.3 lift on the reportable set — a reasonable
-**warmup**, not a dead end. On-policy methods (RL on ANLS, OPD) remain the next lever to
-push further, with SFT as a viable cold-start.
+**Redirect (softened):** SFT gives a real, modest lift on the reportable set — a
+reasonable **warmup / cold-start**, not a dead end. On-policy methods (RL on ANLS, OPD)
+remain the next lever to push further.
 
 ## Methodological lesson (load-bearing for the RL phase)
 **Screen on docvqa_mini, but CONFIRM verdicts on the full 80-Q val.** The 29-Q mini
