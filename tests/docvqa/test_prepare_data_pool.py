@@ -63,3 +63,11 @@ def test_mapqa_parser_extracts_question_and_answer():
         ("Which state has the highest value?\nShort answer required.", "Texas."),
         ("Is Ohio higher than Iowa?\nBe succinct.", "No."),
     ]
+
+
+def test_page_count_handles_list_and_stringified():
+    from docvqa.scripts.prepare_data import _page_count
+
+    assert _page_count(["p0", "p1", "p2"]) == 3
+    assert _page_count("['p0', 'p1']") == 2
+    assert _page_count(None) == 0

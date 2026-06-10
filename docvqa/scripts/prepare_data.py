@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import shutil
 import sys
@@ -472,6 +473,73 @@ def adapter_mapqa(split: str, split_dir: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Adapter: mp-docvqa (lmms-lab/MP-DocVQA), <= max_pages filter
+# ---------------------------------------------------------------------------
+
+def _page_count(page_ids) -> int:
+    """Page count from MP-DocVQA's ``page_ids`` without decoding images.
+
+    ``page_ids`` arrives as a stringified Python list (e.g. "['p0', 'p1']");
+    handle a real list too. Returns 0 for None / unparseable.
+    """
+    if page_ids is None:
+        return 0
+    if isinstance(page_ids, str):
+        try:
+            page_ids = ast.literal_eval(page_ids)
+        except (ValueError, SyntaxError):
+            return 0
+    return len(page_ids)
+
+
+def _mp_doc_images(row) -> list:
+    """Collect image_1..image_20 up to the first None (doc's page images)."""
+    imgs = []
+    for i in range(1, 21):
+        v = row.get(f"image_{i}")
+        if v is None:
+            break
+        imgs.append(v)
+    return imgs
+
+
+def adapter_mp_docvqa(split: str, split_dir: Path, max_pages: int = 3) -> list[dict]:
+    """Build docs/ and return raw rows for lmms-lab/MP-DocVQA.
+
+    One HF row per (doc, question). Keep only docs with ``<= max_pages`` pages,
+    decided from ``page_ids`` WITHOUT decoding images. Materialize each doc's
+    pages once; emit one row per question.
+    """
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("lmms-lab/MP-DocVQA", split=split)
+    seen_docs: set[str] = set()
+    rows: list[dict] = []
+    for r in ds:
+        if _page_count(r.get("page_ids")) > max_pages:
+            continue
+        doc_id = str(r["doc_id"])
+        if doc_id not in seen_docs:
+            doc_out = docs_dir / doc_id / "pages"
+            doc_out.mkdir(parents=True, exist_ok=True)
+            for i, img in enumerate(_mp_doc_images(r)):
+                p = doc_out / f"page_{i}.png"
+                if not p.exists() and isinstance(img, Image.Image):
+                    img.convert("RGB").save(p, format="PNG")
+            (docs_dir / doc_id / "metadata.json").write_text(json.dumps({
+                "doc_id": doc_id, "num_pages": _page_count(r.get("page_ids")),
+                "doc_category": "business_report", "dataset": "mp-docvqa", "split": split,
+            }, indent=2))
+            seen_docs.add(doc_id)
+        rows.append(_build_row(
+            dataset="mp-docvqa", split=split, doc_id=doc_id,
+            question_id=str(r["questionId"]), question=r["question"],
+            answer=_gold_answer_str(r.get("answers")), category="business_report",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
 
@@ -482,9 +550,9 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "infographicvqa": adapter_infographicvqa,
     "chartqa": adapter_chartqa,
     "mapqa": adapter_mapqa,
+    "mp-docvqa": adapter_mp_docvqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
-    #   "mp-docvqa": adapter_mp_docvqa,
     #   "infographic-vqa": adapter_infographic_vqa,
 }
 
