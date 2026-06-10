@@ -396,6 +396,25 @@ def adapter_infographicvqa(split: str, split_dir: Path) -> list[dict]:
     return rows
 
 
+def adapter_chartqa(split: str, split_dir: Path) -> list[dict]:
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("HuggingFaceM4/ChartQA", split=split)
+    rows: list[dict] = []
+    for idx, r in enumerate(ds):
+        doc_id = f"chartqa_{split}_{idx}"
+        label = r.get("label")
+        answer = _gold_answer_str(label if isinstance(label, list) else [label])
+        _materialize_single_image_doc(
+            doc_id=doc_id, image=r["image"], category="science_poster",
+            dataset="chartqa", split=split, docs_dir=docs_dir)
+        rows.append(_build_row(
+            dataset="chartqa", split=split, doc_id=doc_id, question_id=str(idx),
+            question=r["query"], answer=answer, category="science_poster",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
@@ -405,6 +424,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "mmlongbench-doc": adapter_mmlongbench_doc,
     "docvqa-sp": adapter_docvqa_sp,
     "infographicvqa": adapter_infographicvqa,
+    "chartqa": adapter_chartqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "mp-docvqa": adapter_mp_docvqa,

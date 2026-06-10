@@ -36,3 +36,8 @@ def test_gold_answer_single_vs_multi():
     assert _gold_answer_str(["paris", "Paris"]) == repr(["paris", "Paris"])
     assert _gold_answer_str([]) is None
     assert _gold_answer_str("paris") == "paris"
+
+
+def test_chartqa_label_to_answer():
+    # ChartQA label is a list; _gold_answer_str over a 1-element list returns the bare string
+    assert _gold_answer_str(["52.0"]) == "52.0"
