@@ -362,6 +362,40 @@ def adapter_docvqa_sp(split: str, split_dir: Path) -> list[dict]:
     return rows
 
 
+def adapter_infographicvqa(split: str, split_dir: Path) -> list[dict]:
+    """Build docs/ and return raw rows for lmms-lab/DocVQA 'InfographicVQA' config.
+
+    Schema NOTE: unlike the 'DocVQA' (single-page) config, this config has NO
+    ``docId`` field — its keys are ``questionId, question, answers, answer_type,
+    image, image_url, operation/reasoning, ocr, data_split``. Questions on the
+    same infographic share the same ``image_url``, so we derive a stable,
+    filesystem-safe ``doc_id`` from it (short blake2b hash) to group questions
+    per document and keep the single-image-doc materializer semantics.
+    """
+    import hashlib
+
+    docs_dir = split_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ds = load_dataset("lmms-lab/DocVQA", "InfographicVQA", split=split)
+    seen_docs: set[str] = set()
+    rows: list[dict] = []
+    for r in ds:
+        doc_key = r.get("image_url") or f"q{r['questionId']}"
+        doc_id = "infvqa_" + hashlib.blake2b(
+            doc_key.encode("utf-8"), digest_size=8).hexdigest()
+        if doc_id not in seen_docs:
+            _materialize_single_image_doc(
+                doc_id=doc_id, image=r["image"], category="infographics",
+                dataset="infographicvqa", split=split, docs_dir=docs_dir)
+            seen_docs.add(doc_id)
+        rows.append(_build_row(
+            dataset="infographicvqa", split=split, doc_id=doc_id,
+            question_id=str(r["questionId"]), question=r["question"],
+            answer=_gold_answer_str(r.get("answers")), category="infographics",
+            doc_dir_abs=(docs_dir / doc_id).resolve()))
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Adapter registry
 # ---------------------------------------------------------------------------
@@ -370,6 +404,7 @@ ADAPTERS: dict[str, Callable[[str, Path], list[dict]]] = {
     "docvqa-2026": adapter_docvqa_2026,
     "mmlongbench-doc": adapter_mmlongbench_doc,
     "docvqa-sp": adapter_docvqa_sp,
+    "infographicvqa": adapter_infographicvqa,
     # Future:
     #   "docvqa-1.0": adapter_docvqa_1_0,
     #   "mp-docvqa": adapter_mp_docvqa,
