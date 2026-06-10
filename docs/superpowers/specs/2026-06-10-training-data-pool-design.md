@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-10
 **Status:** approved (design); pending implementation plan
-**Repos touched:** `~/repos/docvqa` (dataset loaders + metrics), `~/repos/docvqa-verl` (training-data prep)
+**Repos touched:** `~/repos/docvqa-verl` only (new `prepare_data.py` adapters + manifest + optional collection wrapper)
 
 ## Goal
 
@@ -137,51 +137,65 @@ navigation. **Uncovered:** comics, engineering_drawing.
 
 ## Architecture
 
-Scope split follows the repo rule (loaders/metrics in `~/repos/docvqa`;
-training-data prep in `docvqa-verl`).
+**Everything lives in `docvqa-verl`** (matches the scope rule: "data prep
+for training prompts" is do-here). The real extension point is the existing
+`docvqa/scripts/prepare_data.py` `ADAPTERS` registry — not REPO_A loaders.
+Each adapter materializes page images on disk + returns rows through the
+shared `_build_row()`, which already emits the **verl-ready prompt set**
+(`record_id`, `prompt`, `reward_model.ground_truth`, `extra_info`), and the
+shared `_emit_split()` writes `questions.json` (+ auto `train.json` /
+`heldout.json`). The "prompt set" *is* that `questions.json`.
 
-### In `~/repos/docvqa`
-1. **Loaders** in `src/docvqa/datasets/`, each → `Document(doc_id,
-   doc_category, images: list[PIL], questions: [{question_id, question,
-   answer}])`, dispatched in `load_documents()` like the existing
-   `mp_docvqa.py` / `mmlongbench_doc.py`:
-   `lmms_lab_docvqa.py` (DocVQA-SP + InfographicVQA), `chartqa.py`,
-   `mapqa.py`, `tatdqa.py`, `dude.py`, `slidevqa.py`; extend `mp_docvqa.py`
-   with `max_pages`. (`dvqa.py`/`plotqa.py` optional, later.)
-2. **Profiles + score_fns**: register one `DatasetProfile` per dataset in
-   `profile.py:_PROFILES` keyed by HF id, `doc_category` = nearest of the 8
-   (so the scaffold's per-category answer-format tips apply). Add a
-   **`relaxed_accuracy` score_fn** (±5% numeric tolerance, ChartQA-style)
-   in `metrics.py` for the numeric sets. **Load-bearing**: strict ANLS=1.0
-   would wrongly reject correct-but-reformatted numbers during rejection
-   sampling.
-
-### In `docvqa-verl`
-3. **Pool manifest** `docvqa/train/pool.yaml` — single source of truth:
-   per dataset → HF id, split, `max_pages`, sample size `K`, category,
-   score_fn, difficulty tier. This + the loaders/profiles is the **primary,
-   always-needed deliverable** (the RL/OPD prompt substrate); it stands
-   alone with no collection run.
-4. **Collection driver** (optional) `docvqa/train/collect_pool.sh` (+ small
-   py) — run only when a recipe needs trajectories or the difficulty signal:
-   per manifest entry → load (filtered) → sample `K` → run 27B teacher
-   through the existing `eval.py` (`DocVQAReplAgentLoop`) → score with the
-   dataset's `score_fn` → keep solved → `make_clean_sft.py` → per-dataset
-   parquet → concat → trajectory parquet; record per-question solve-rate
-   back onto the prompt set.
+### Components
+1. **Per-dataset adapters** in `docvqa/scripts/prepare_data.py` — one
+   `adapter_<name>(split, split_dir) -> list[dict]` each, registered in
+   `ADAPTERS`, following the existing `adapter_docvqa_2026` /
+   `adapter_mmlongbench_doc` pattern: load HF → materialize
+   `docs/<doc_id>/pages/page_*.png` + `metadata.json` → `_build_row(...)`.
+   Datasets: `docvqa-sp`, `infographicvqa`, `chartqa`, `mapqa`,
+   `mp-docvqa`, `tatdqa`, `dude`, `slidevqa` (+ optional `dvqa`/`plotqa`).
+   **Length/evidence filtering happens here**: skip MP-DocVQA docs >3pg
+   (cheap `page_ids` length, before image decode); DUDE >2pg
+   (`len(pdfium.PdfDocument)`); SlideVQA keep `len(evidence_pages)==1` and
+   materialize only the evidence slide. Shared single-image and
+   PDF-rasterize helpers factored out (the latter already exists as
+   `_mmlb_render_pdf`).
+   - **category** field = nearest of the 8 DocVQA-2026 categories (or a
+     dataset tag), carried by `_build_row`, used by the agent loop's
+     per-category prompting.
+2. **Pool manifest** `docvqa/train/pool.yaml` — the curated list of which
+   prepared `questions.json` files form the pool: per dataset path, sample
+   size `K`, difficulty tier. **Primary, always-needed deliverable**: the
+   prepared `questions.json` files + this manifest *are* the RL/OPD prompt
+   substrate; they stand alone with no collection run.
+3. **Relaxed-numeric reward (optional)** — collection + RL score via
+   REPO_B's vendored `docvqa/metrics.py:evaluate_prediction` (strict
+   numeric + ANLS@0.9). For ChartQA/MapQA/TAT-DQA, add a ±5% numeric-
+   tolerance branch keyed by `dataset`/`category` so correct-but-reformatted
+   numbers are credited. **Deferrable** — strict scoring only lowers yield,
+   doesn't block.
+4. **Collection driver (optional)** `docvqa/train/collect_pool.sh` — run
+   only when a recipe needs trajectories or the difficulty signal: per
+   manifest entry → sample `K` from `questions.json` → 27B teacher through
+   the existing `docvqa/scripts/eval.py` → keep `anls==1.0 &&
+   termination=="submit"` via `make_clean_sft.py` → per-dataset parquet →
+   concat → trajectory parquet; the run's per-question `mean` score is the
+   teacher solve-rate / difficulty tag.
 
 ### Data flow
 ```
-loaders + profiles/score_fn + manifest  ──► prompt set (RL/OPD-ready, no collection needed)
+prepare_data.py adapters
+  ──► data/<dataset>/<split>/{questions.json, docs/<id>/pages/*.png}
+  ──► pool.yaml curates them ──► RL/OPD prompt substrate (no collection needed)
 
 optional collection (when trajectories/difficulty signal wanted):
-manifest → filtered load → sample K → teacher rollouts (eval.py)
-  → per-dataset score_fn filter (rejection sampling)
-  → make_clean_sft → per-dataset parquet → concat → trajectory parquet
-  → (+ per-question solve-rate written back onto the prompt set)
+sample K from questions.json → eval.py teacher rollouts (trajectories.jsonl)
+  → make_clean_sft (anls==1.0 & submit, first-fence) → per-dataset parquet
+  → concat → trajectory parquet  (+ per-question mean = solve-rate tag)
 ```
-No changes to the scaffold or trainer — loaders + profiles + a
-manifest-driven wrapper around existing `eval.py` and `make_clean_sft.py`.
+No changes to the scaffold, trainer, or `eval.py` — new `prepare_data.py`
+adapters + a manifest + an optional thin collection wrapper around the
+existing `eval.py` and `make_clean_sft.py`.
 
 ## Collection plan (optional — only if trajectories/difficulty signal needed)
 
@@ -220,11 +234,12 @@ yield ~800–1600 solved trajectories (prior collections kept 80–245).
 
 ## Success criteria
 
-- **Substrate (always):** each pool dataset loads to `Document` objects with
-  correct images + gold answers; length filters enforced (MP-DocVQA ≤3pg,
-  DUDE ≤2pg, SlideVQA single evidence slide); each has a registered profile
-  + `score_fn`, so the manifest is usable as a verl RL/OPD prompt dataset
-  **with no collection run**.
+- **Substrate (always):** each adapter writes `questions.json` + materialized
+  `docs/<id>/pages/*.png` with correct gold answers; length filters enforced
+  (MP-DocVQA ≤3pg, DUDE ≤2pg, SlideVQA single evidence slide); rows pass
+  through `_build_row` (verl-ready), so each `questions.json` is usable both
+  as `eval.py` input and as a verl RL/OPD prompt dataset **with no
+  collection run**.
 - Numeric datasets scored by relaxed-accuracy (correct-but-reformatted
   numbers credited) — load-bearing as both rejection filter and RL reward.
 - No DocVQA-2026 val/test image leaks into the pool.
