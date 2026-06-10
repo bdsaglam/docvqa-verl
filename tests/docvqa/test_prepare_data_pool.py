@@ -5,6 +5,18 @@ from PIL import Image
 
 from docvqa.scripts.prepare_data import _materialize_single_image_doc
 from docvqa.scripts.prepare_data import _gold_answer_str
+from docvqa.scripts.prepare_data import _coerce_image
+
+
+def test_coerce_image_handles_pil_and_bytes_dict():
+    import io as _io
+
+    pil = Image.new("RGB", (4, 4), "white")
+    assert _coerce_image(pil) is pil
+    buf = _io.BytesIO()
+    pil.save(buf, format="PNG")
+    got = _coerce_image({"bytes": buf.getvalue(), "path": None})
+    assert got.size == (4, 4)
 
 
 def test_single_image_doc_saves_one_page_and_metadata(tmp_path):

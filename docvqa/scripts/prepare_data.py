@@ -165,6 +165,21 @@ def _materialize_docvqa_2026_doc(row: Any, split: str, docs_dir: Path) -> None:
     (doc_out / "metadata.json").write_text(json.dumps(meta, indent=2))
 
 
+def _coerce_image(img) -> Image.Image:
+    """Decode an HF image cell (a PIL image, or a {'bytes':..,'path':..} dict) to PIL."""
+    if isinstance(img, Image.Image):
+        return img
+    if isinstance(img, dict):
+        data = img.get("bytes")
+        if data:
+            import io
+            return Image.open(io.BytesIO(data))
+        path = img.get("path")
+        if path:
+            return Image.open(path)
+    raise TypeError(f"Unsupported image cell type: {type(img)!r}")
+
+
 def _materialize_single_image_doc(
     *, doc_id: str, image: Image.Image, category: str,
     dataset: str, split: str, docs_dir: Path,
@@ -463,7 +478,7 @@ def adapter_mapqa(split: str, split_dir: Path) -> list[dict]:
         imgs = r.get("images") or []
         if not imgs:
             continue
-        image = imgs[0]
+        image = _coerce_image(imgs[0])
         _materialize_single_image_doc(
             doc_id=doc_id, image=image, category="maps",
             dataset="mapqa", split=split, docs_dir=docs_dir)
