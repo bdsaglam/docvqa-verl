@@ -9,6 +9,12 @@
 # Init actor from the v1 SeqKD model (warm start → some in-group reward variance, avoids
 # the zero-variance GRPO cold start).
 #
+# Sampling: TRAIN rollouts stay at verl defaults (temp 1.0, top_p 1.0, top_k off) — on-policy
+# GRPO needs the policy's own untruncated distribution (trainer corrects log-probs for
+# temperature only, not for top-p/top-k truncation). VAL mirrors deploy sampling
+# (0.6/0.95/20 = configs/lm/*.yaml in ~/repos/docvqa) so test_freq evals measure the
+# policy as deployed.
+#
 # DEFAULTS BELOW ARE A TINY DRY-RUN. Scale up via env vars once the dry-run is clean.
 # Run with `.venv-rl` active (the only env with a verl-compatible vllm). Requires the 27B VLM up at :8927. Pause mmlb collection first
 # (shares the 27B). Read CLAUDE.md RL-training-practices BEFORE the real (scaled) run:
@@ -36,6 +42,14 @@ KL_COEF=${KL_COEF:-0.001}
 ROLLOUT_GPU_MEM=${ROLLOUT_GPU_MEM:-0.45}        # actor+ref+rollout colocate on 1 GPU
 NGPUS=${NGPUS:-1}
 ROLLOUT_TIMEOUT=${ROLLOUT_TIMEOUT:-1200}
+# LoRA target modules. MUST be LM-only for Qwen3.5-VL (`Qwen3_5ForConditionalGeneration`):
+# `all-linear` makes PEFT wrap the VISION tower's linears too, but vLLM only LoRA-adapts the
+# language model (it logs "visual.blocks...will be ignored"). The mismatch makes verl's base-weight
+# sync rename vision params to `...base_layer.weight`, which vLLM's unwrapped vision tower lacks
+# -> KeyError 'blocks.0.attn.qkv.base_layer.weight' during rollout weight-sync. The LM-only list
+# also matches project scope (we do NOT fine-tune the VLM). Vision linears use qkv/proj/fc1/fc2
+# names, so this list cannot accidentally match them.
+TARGET_MODULES=${TARGET_MODULES:-'[q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]'}
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -54,7 +68,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path="${MODEL_PATH}" \
     actor_rollout_ref.model.lora_rank=32 \
     actor_rollout_ref.model.lora_alpha=32 \
-    actor_rollout_ref.model.target_modules=all-linear \
+    actor_rollout_ref.model.target_modules="${TARGET_MODULES}" \
     actor_rollout_ref.model.use_remove_padding=False \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.optim.lr=${LR} \
@@ -69,6 +83,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.gpu_memory_utilization=${ROLLOUT_GPU_MEM} \
     actor_rollout_ref.rollout.n=${ROLLOUT_N} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+    actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
+    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
     actor_rollout_ref.rollout.multi_turn.enable=True \
     actor_rollout_ref.rollout.agent.agent_loop_config_path=docvqa/agent.yaml \
     actor_rollout_ref.rollout.agent.default_agent_loop=docvqa_repl \
