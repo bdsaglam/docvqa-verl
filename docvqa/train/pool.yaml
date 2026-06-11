@@ -1,6 +1,8 @@
 # Curated short-doc DocVQA-family training pool.
 # `questions` = the prepared prompt set (run prepare_data.py to materialize).
-# K = sample size per dataset for optional teacher collection; tier = curriculum difficulty.
+# `n_sample`  = per-source weight: how many questions sample_pool.py draws from
+#   this source into the balanced pool (capped at availability). Tune per source
+#   to control the mix; equal values => balanced. tier = curriculum difficulty.
 # Categories used are 5 of DocVQA-2026's 8 (business_report, infographics, maps,
 # science_poster, slide); comics/engineering_drawing/science_paper have no
 # suitable short-doc source. The agent loop's per-category prompting applies.
@@ -10,33 +12,33 @@ datasets:
     questions: data/docvqa-sp/validation/questions.json
     category: business_report
     tier: easy
-    K: 150
+    n_sample: 1500
   - name: infographicvqa
     questions: data/infographicvqa/validation/questions.json
     category: infographics
     tier: hard
-    K: 150
+    n_sample: 1500
   - name: chartqa
     questions: data/chartqa/train/questions.json
     category: science_poster
     tier: easy
-    K: 150
+    n_sample: 1500
   - name: mapqa
     questions: data/mapqa/train/questions.json
     category: maps
     tier: easy
-    K: 150
+    n_sample: 1500   # capped from ~483k so it doesn't dominate
   # Phase 2 — short multi-page + numeric (prepare these, then they activate)
   - name: mp-docvqa
     questions: data/mp-docvqa/val/questions.json
     category: business_report
     tier: mid
-    K: 150
+    n_sample: 1500
   - name: tatdqa
     questions: data/tatdqa/dev/questions.json
     category: business_report
     tier: mid
-    K: 150
+    n_sample: 1500
   # DUDE excluded for now (adapter_dude remains in prepare_data.py; re-add an
   # entry here to bring it back). Heavy multi-GB downloads + replicated loader
   # join made it the highest-risk adapter; revisit after the rest is validated.
@@ -44,4 +46,4 @@ datasets:
     questions: data/slidevqa/train/questions.json
     category: slide
     tier: mid
-    K: 150
+    n_sample: 1500
