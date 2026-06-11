@@ -106,5 +106,5 @@ remote tunnel — check the session registry).
 - **Splits differ per source** — use the table; `prepare_data.py`'s `main()` default (`val,test`) is wrong for most.
 - **MapQA images** are HF `{bytes,path}` dicts (decoded via `_coerce_image`); other sources are PIL.
 - **Reward + multi-alias:** golds with several aliases are `repr([...])`; `compute_score` parses them (`get_anls` alone does not — don't bypass it).
-- **Not yet done:** val-leakage guard (drop pool docs whose images collide with DocVQA-2026 val/test) — add before using infographicvqa/mp-docvqa for anything scored on DocVQA-2026.
+- **Val-leakage: checked, none.** `find_pool_leakage.py` (dHash shortlist → pixel-verify) vs DocVQA-2026 **val** found only 2 truly-reused images (infographicvqa ↔ val infographics) — and those carry **different questions/answers** than val, so no answer is memorizable (image-only overlap ≠ leakage). Kept in. **test split not yet checked** (not materialized; images are downloadable) — re-run the detector against it before trusting test numbers.
 - **Reproducible:** `sample_pool.py --seed 42` is deterministic per source.
