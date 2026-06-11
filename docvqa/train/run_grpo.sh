@@ -42,6 +42,19 @@ KL_COEF=${KL_COEF:-0.001}
 ROLLOUT_GPU_MEM=${ROLLOUT_GPU_MEM:-0.45}        # actor+ref+rollout colocate on 1 GPU
 NGPUS=${NGPUS:-1}
 ROLLOUT_TIMEOUT=${ROLLOUT_TIMEOUT:-1200}
+# MUST be a non-"dummy" format for Qwen3.5 (hybrid GDN/linear-attn model). With the verl
+# default `load_format=dummy`, vLLM inits the rollout engine with RANDOM weights and relies on
+# verl's FSDP->vLLM base-weight sync. But that sync ships the GDN `linear_attn` projections under
+# SPLIT, non-LoRA-wrapped names (in_proj_qkv/z/a/b, conv1d, out_proj) while vLLM expects them
+# FUSED + LoRA-wrapped (in_proj_qkvz.base_layer.weight, in_proj_ba.base_layer.weight, ...). vLLM's
+# loader does not apply the split->fused + .base_layer mapping for GDN layers, so ~6/7 linear_attn
+# params per hybrid layer SILENTLY skip -> stay random -> the rollout policy emits GIBBERISH ->
+# every rollout fails -> zero reward. `safetensors` makes vLLM load the REAL checkpoint at init
+# (GDN correct) and sets base_sync_done=True (engine_workers.py:614 `"dummy" not in load_format`),
+# so verl SKIPS the broken base push and only syncs LoRA deltas (standard layers). Diagnosed via
+# DOCVQA_WEIGHTSYNC_DUMP instrumentation on docvqa-rl. (Standard MLP/attn layers tolerate the
+# dummy+sync path; only the hybrid GDN layers need this.)
+LOAD_FORMAT=${LOAD_FORMAT:-safetensors}
 # LoRA target modules. MUST be LM-only for Qwen3.5-VL (`Qwen3_5ForConditionalGeneration`):
 # `all-linear` makes PEFT wrap the VISION tower's linears too, but vLLM only LoRA-adapts the
 # language model (it logs "visual.blocks...will be ignored"). The mismatch makes verl's base-weight
@@ -78,6 +91,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.kl_loss_coef=${KL_COEF} \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.rollout.name=vllm \
+    actor_rollout_ref.rollout.load_format=${LOAD_FORMAT} \
     actor_rollout_ref.rollout.mode=async \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=${ROLLOUT_GPU_MEM} \
