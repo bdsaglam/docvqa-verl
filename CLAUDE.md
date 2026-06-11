@@ -147,6 +147,11 @@ The project box has **4×80GB GPUs (0,1,2,3)**. The **27B VLM** (Qwen3.5-27B, th
 (eval, collection, RL) — **NOT during SFT**. Default allocations, so we don't re-decide
 each time:
 
+> These are **high-level defaults, not hard rules** — adapt to the specific use case's
+> needs (model size, batch size, number of checkpoints to eval, how many GPUs are free,
+> whether other experiments are sharing the box). The goal is to stop re-discussing the
+> common cases, not to forbid sensible deviations.
+
 1. **SFT** (no VLM — trains on static teacher trajectories):
    **Use 2 GPUs (FSDP), leave 2 free** for other experiments / a VLM. Small-model LoRA
    SFT (≤8B) is *overhead-bound*, so 2 GPUs ≈ 4 GPUs in throughput — do **not** grab all
