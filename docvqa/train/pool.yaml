@@ -47,3 +47,12 @@ datasets:
     category: slide
     tier: mid
     n_sample: 1500
+  # MMLongBench-Doc: long multi-page docs. Included (helped DocVQA in SFT
+  # experiments) despite long rollouts -> EXPENSIVE to collect. Only ~964 Qs
+  # available; lower n_sample for cheaper teacher collection. category=mixed
+  # (rows carry their own doc_type, not one of DocVQA-2026's 8).
+  - name: mmlongbench-doc
+    questions: data/mmlongbench-doc/train/questions.json
+    category: mixed
+    tier: hard
+    n_sample: 1000

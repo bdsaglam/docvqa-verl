@@ -7,7 +7,7 @@ this repo (`docvqa/scripts/`), no `~/repos/docvqa` changes.
 
 Design rationale / decisions: `docs/superpowers/specs/2026-06-10-training-data-pool-design.md`.
 
-## What's in it (7 sources)
+## What's in it (8 sources)
 
 Each source is materialized to `data/<dataset>/<split>/`:
 - `questions.json` — every question as a verl-ready row (schema below)
@@ -22,6 +22,7 @@ Each source is materialized to `data/<dataset>/<split>/`:
 | mp-docvqa | val | 583 | 2,986 | business_report | filtered to ≤3 pages |
 | tatdqa | dev | 275 | 1,644 | business_report | financial tables; numeric |
 | slidevqa | train | 5,962 | 9,381 | slide | single-evidence-slide only |
+| mmlongbench-doc | train | ~135 | 964 | mixed | **long** multi-page; expensive to collect |
 
 Categories are the nearest of DocVQA-2026's 8 (drives the agent's per-category
 prompting). **comics / engineering_drawing / science_paper** have no suitable
@@ -34,7 +35,7 @@ into a balanced set so no single source dominates (MapQA's 483k would otherwise
 swamp everything):
 
 ```
-data/pool/prompts.json         # combined, shuffled (default 7×1500 = 10,500)
+data/pool/prompts.json         # combined, shuffled (~11.5k: 7×1500 + mmlb 964)
 data/pool/sampled/<name>.json  # per-source sample (used by collect_pool.sh)
 ```
 
