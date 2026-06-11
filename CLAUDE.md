@@ -140,6 +140,36 @@ mismatch in TRL" (Diroh/HF 2026); the TITO write-up (Gallouédec & Rasul,
 `github.com/PrimeIntellect-ai/renderers`); ScaleRL (Khatri 2025); TIM/VeXact
 (Zhong 2026); RLHF Book Lecture 4 (Lambert).
 
+## GPU layout per use case (4×80GB box)
+
+The project box has **4×80GB GPUs (0,1,2,3)**. The **27B VLM** (Qwen3.5-27B, the
+`batch_look` perception server on `:8927`) is only needed when **agent rollouts** run
+(eval, collection, RL) — **NOT during SFT**. Default allocations, so we don't re-decide
+each time:
+
+1. **SFT** (no VLM — trains on static teacher trajectories):
+   **Use 2 GPUs (FSDP), leave 2 free** for other experiments / a VLM. Small-model LoRA
+   SFT (≤8B) is *overhead-bound*, so 2 GPUs ≈ 4 GPUs in throughput — do **not** grab all
+   4. (8B is borderline-OOM on a single 80GB GPU with fp32-master+bf16, so 2 is the safe
+   minimum; the 4B fits on 1.) Run via `run_seqkd.sh <data> <exp> <nproc>` with nproc=2.
+
+2. **Eval** (VLM-throughput-bound):
+   **3 GPUs for the 27B VLM (DP=3, `:8927`) + 1 GPU for the agent LLM (`:8930`).**
+   Use **`--concurrency 24`** — the DP=3 VLM comfortably handles 24 in-flight requests;
+   conc8 leaves it ~half-idle. Concurrency changes throughput only, **not** results
+   (rollouts are independent), so it's safe to raise and keeps numbers comparable.
+   Serve the 8B agent with `--max-model-len 40960` (Qwen3-8B's cap; the 3.5-4B allowed
+   65536). To eval several checkpoints, either keep DP=3 + one high-conc eval serially,
+   or drop the VLM to DP=2 and run 2 agent GPUs in parallel.
+
+3. **RL (GRPO/OPD)** — needs the policy (train + rollout generation) **and** the 27B VLM
+   live **simultaneously** (rollouts call `batch_look`), so it's the tightest case.
+   **Proposed starting point (confirm when the verl recipe lands — task #6):** 27B VLM
+   **DP=2 (GPUs 0,1)** + policy **FSDP train+rollout colocated on GPUs 2,3**. Rollouts
+   are VLM-bound like eval, so watch whether DP=2 VLM throttles generation; if so, bias
+   more GPUs to the VLM and fewer to the (small) policy. Finalize once we know the recipe
+   shape (colocated hybrid-engine rollout vs disaggregated vLLM server).
+
 ## Running things
 
 verl's environment setup (uv, hydra, pre-commit) is documented in
