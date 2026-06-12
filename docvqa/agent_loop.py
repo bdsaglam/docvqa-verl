@@ -353,27 +353,40 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             except Exception:
                 pass
 
+        extra_fields = {
+            "messages": messages,
+            "termination": termination,
+            "submitted_answer": submitted_answer,
+            "num_turns": num_turns,
+            "vlm_calls": vlm_calls,
+            "turns_truncated": turns_truncated,
+            "max_turn_tokens": max_turn_tokens,
+            "multi_block_turns": multi_block_turns,
+            "empty_output_turns": empty_output_turns,
+            "wall_clock_s": time.monotonic() - wall_start,
+            "doc_id": meta["doc_id"],
+            "question_id": question_id,
+            "category": category,
+        }
+
+        # Optional debug: append the full trajectory (incl. messages) to a JSONL file when
+        # DOCVQA_TRAJ_DUMP is set. For inspecting RL rollouts (why a rollout struck out / what
+        # it submitted). Best-effort: never let a dump error abort a rollout.
+        dump_path = os.environ.get("DOCVQA_TRAJ_DUMP")
+        if dump_path:
+            try:
+                with open(dump_path, "a") as _f:
+                    _f.write(json.dumps(extra_fields, default=str) + "\n")
+            except Exception:
+                pass
+
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self._response_length_cap],
             response_mask=response_mask[: self._response_length_cap],
             num_turns=num_turns,
             metrics=AgentLoopMetrics(),
-            extra_fields={
-                "messages": messages,
-                "termination": termination,
-                "submitted_answer": submitted_answer,
-                "num_turns": num_turns,
-                "vlm_calls": vlm_calls,
-                "turns_truncated": turns_truncated,
-                "max_turn_tokens": max_turn_tokens,
-                "multi_block_turns": multi_block_turns,
-                "empty_output_turns": empty_output_turns,
-                "wall_clock_s": time.monotonic() - wall_start,
-                "doc_id": meta["doc_id"],
-                "question_id": question_id,
-                "category": category,
-            },
+            extra_fields=extra_fields,
         )
 
     async def _append_observation(

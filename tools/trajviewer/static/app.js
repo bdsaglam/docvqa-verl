@@ -252,6 +252,8 @@ function renderTriage(run) {
   });
 
   const nCorrect = triageRows.filter((r) => r.is_correct === true).length;
+  const nWrong = triageRows.filter((r) => r.is_correct === false).length;
+  const nPartial = triageRows.filter((r) => r.is_correct === false && r.anls > 0).length;
   const head = cols.map(([k, lab]) =>
     `<th class="sortable" data-k="${k}">${lab}${s === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("");
   const body = rows.map((r) => {
@@ -271,14 +273,13 @@ function renderTriage(run) {
   }).join("");
 
   app.innerHTML = `
-    <h2>${esc(run)} <span class="count">· ${nCorrect}/${triageRows.length} correct</span></h2>
+    <h2>${esc(run)} <span class="count">· ${fmtAnls(nCorrect / triageRows.length)} · ${nCorrect}/${triageRows.length} correct</span></h2>
     <div class="toolbar">
       <input type="text" id="q" placeholder="filter question / id / answer…" value="${esc(triageState.q)}" />
       <button class="btn ${triageState.filter === "all" ? "active" : ""}" data-f="all">all (${triageRows.length})</button>
-      <button class="btn ${triageState.filter === "correct" ? "active" : ""}" data-f="correct">correct</button>
-      <button class="btn ${triageState.filter === "wrong" ? "active" : ""}" data-f="wrong">wrong</button>
-      <button class="btn ${triageState.filter === "partial" ? "active" : ""}" data-f="partial">partial anls</button>
-      <span class="count">${rows.length} shown</span>
+      <button class="btn ${triageState.filter === "correct" ? "active" : ""}" data-f="correct">correct (${nCorrect})</button>
+      <button class="btn ${triageState.filter === "wrong" ? "active" : ""}" data-f="wrong">wrong (${nWrong})</button>
+      <button class="btn ${triageState.filter === "partial" ? "active" : ""}" data-f="partial">partial anls (${nPartial})</button>
     </div>
     <table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="8" class="empty">none</td></tr>`}</tbody></table>`;
 
