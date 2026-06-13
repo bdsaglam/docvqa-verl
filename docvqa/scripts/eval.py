@@ -134,9 +134,17 @@ def _build_loop(base_url: str, model: str,
 
 async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
                    sampling: dict, rollout_timeout: float | None = None,
-                   save_token_ids: bool = True) -> dict[str, Any]:
-    """Run n rollouts for one question; return full per-sample records (incl.
-    the chat ``messages`` trajectory) + scoring.
+                   save_token_ids: bool = True,
+                   max_keep: int | None = None) -> dict[str, Any]:
+    """Run up to n rollouts for one question; return full per-sample records
+    (incl. the chat ``messages`` trajectory) + scoring.
+
+    ``n`` is the rollout BUDGET. With ``max_keep`` set (rejection-sampling
+    generation), rollouts run sequentially and stop early as soon as the
+    question has ``max_keep`` keepers (anls==1.0) — easy prompts finish in 2
+    rollouts and free their concurrency slot, so the in-flight pool stays
+    saturated while hard prompts get the full budget. ``max_keep=None`` (eval)
+    always runs all n (pass@n / SC metrics need every sample).
 
     Each rollout is bounded by ``rollout_timeout`` seconds (wall clock). The
     agent loop's per-turn caps do NOT bound ``batch_look``'s VLM HTTP calls
@@ -207,6 +215,10 @@ async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
             rec.update(termination=f"error:{e!r}",
                        wall_clock_s=time.monotonic() - t0)
         samples.append(rec)
+        # Rejection-sampling early stop: once we have enough keepers, stop
+        # spending rollouts on this (easy) prompt and free the slot.
+        if max_keep is not None and sum(s["anls"] == 1.0 for s in samples) >= max_keep:
+            break
     return {
         "question_id": q["question_id"], "doc_id": q.get("doc_id"),
         "category": q.get("category", "unknown"),
@@ -261,12 +273,17 @@ def _write_summary(run_dir: Path, results: list[dict], meta: dict) -> dict:
     return summary
 
 
-def _load_done_results(run_dir: Path, n: int, aggregate_question) -> tuple[set, list[dict]]:
+def _load_done_results(run_dir: Path, n: int, aggregate_question,
+                       max_keep: int | None = None) -> tuple[set, list[dict]]:
     """For ``--resume``: scan already-streamed trajectories and rebuild per-question
-    result entries so the final summary covers resumed + newly-run questions. A
-    question counts as done iff it already has >= n streamed samples (samples are
-    written atomically per-question, so partial-n shouldn't occur; if it does, the
-    question is re-run)."""
+    result entries so the final summary covers resumed + newly-run questions.
+
+    Without ``max_keep`` a question counts as done iff it has >= n streamed
+    samples (eval; samples are written atomically per-question). With
+    ``max_keep`` (rejection-sampling generation, variable rollout count) a
+    question is done iff it reached ``max_keep`` keepers (anls==1.0) OR exhausted
+    the budget (>= n samples) — so solved-early and proven-unsolvable prompts are
+    both skipped, and only genuinely-partial ones re-run."""
     by_qid: dict[str, list[dict]] = {}
     for fp in run_dir.glob("tasks/*/trajectories.jsonl"):
         with fp.open() as f:
@@ -278,7 +295,11 @@ def _load_done_results(run_dir: Path, n: int, aggregate_question) -> tuple[set, 
     done_ids: set = set()
     done_results: list[dict] = []
     for qid, recs in by_qid.items():
-        if len(recs) < n:
+        if max_keep is not None:
+            keepers = sum(1 for r in recs if r.get("anls") == 1.0)
+            if keepers < max_keep and len(recs) < n:
+                continue
+        elif len(recs) < n:
             continue
         recs = sorted(recs, key=lambda r: r.get("sample_idx", 0))[:n]
         agg = aggregate_question([r.get("submitted_answer") for r in recs],
@@ -319,7 +340,8 @@ async def _main_async(args) -> None:
     total_questions = len(questions)
     done_results: list[dict] = []
     if args.resume:
-        done_ids, done_results = _load_done_results(run_dir, args.n, aggregate_question)
+        done_ids, done_results = _load_done_results(run_dir, args.n, aggregate_question,
+                                                     max_keep=args.max_keep)
         if done_ids:
             questions = [q for q in questions if q.get("question_id") not in done_ids]
             print(f"[resume] {len(done_ids)} questions already complete in {run_dir}; "
@@ -333,7 +355,7 @@ async def _main_async(args) -> None:
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "dataset": args.dataset, "split": args.split,
         "questions": args.questions, "num_questions": total_questions,
-        "n": args.n,
+        "n": args.n, "max_keep": args.max_keep,
         "model": args.model, "base_url": args.base_url,
         "vlm_model": args.vlm_model, "vlm_base_url": args.vlm_base_url,
         "sampling": dict(sampling), "rollout_timeout": args.rollout_timeout,
@@ -348,7 +370,8 @@ async def _main_async(args) -> None:
     async def _bound(q: dict) -> dict[str, Any]:
         async with sem:
             raw = await _solve_n(loop_obj, q, args.n, sampling, rollout_timeout,
-                                 save_token_ids=args.save_token_ids)
+                                 save_token_ids=args.save_token_ids,
+                                 max_keep=args.max_keep)
         samples = raw["samples"]
         agg = aggregate_question([s["submitted_answer"] for s in samples],
                                  raw["gold_answer"])
@@ -404,7 +427,14 @@ def main() -> None:
     ap.add_argument("--vlm-model", default="Qwen/Qwen3.5-27B")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--n", type=int, default=8, help="rollouts per question")
+    ap.add_argument("--n", type=int, default=8, help="rollouts per question "
+                    "(the BUDGET / max rollouts; see --max-keep)")
+    ap.add_argument("--max-keep", type=int, default=None,
+                    help="Rejection-sampling early stop: stop a question once it "
+                         "has this many keepers (anls==1.0), capped at --n. Easy "
+                         "prompts finish fast and free their slot (pool stays "
+                         "saturated); hard prompts get the full --n budget. "
+                         "Default None = run all --n (required for eval metrics).")
     ap.add_argument("--temperature", type=float, default=0.6)
     ap.add_argument("--top-p", type=float, default=0.95)
     ap.add_argument("--top-k", type=int, default=20)

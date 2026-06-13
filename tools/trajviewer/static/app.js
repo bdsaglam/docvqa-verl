@@ -660,10 +660,23 @@ function renderStats() {
 
   // category distribution: plain per-category question counts for the current
   // subset (solve status is already encoded by the subset button — no stacking).
+  // full per-question groups (over ALL samples) — used for the category
+  // universe and for sampling-efficiency, both of which are subset-independent
+  const fullGroups = buildGroups(statsRows);
+
+  // trials to first correct rollout (samples in sample_idx order until the
+  // first success) — only defined for questions that were ever solved
+  const trials = [];
+  for (const g of fullGroups) {
+    const i = g.samples.findIndex((s) => s.is_correct === true);
+    if (i >= 0) trials.push(i + 1);
+  }
+  const maxTrials = Math.max(1, ...trials);
+
   // all categories in the run (so a category with 0 in the subset still shows
   // as an empty bar), ordered by overall question count — stable across subsets
   const fullByCat = {};
-  for (const g of buildGroups(statsRows)) { const c = g.category || "—"; fullByCat[c] = (fullByCat[c] || 0) + 1; }
+  for (const g of fullGroups) { const c = g.category || "—"; fullByCat[c] = (fullByCat[c] || 0) + 1; }
   const subByCat = {};
   for (const g of groups) { const c = g.category || "—"; subByCat[c] = (subByCat[c] || 0) + 1; }
   const catItems = Object.keys(fullByCat).sort((a, b) => fullByCat[b] - fullByCat[a]).map((c) => [c, subByCat[c] || 0]);
@@ -705,6 +718,13 @@ function renderStats() {
       ${chartCard("# pages (document length)", qSeriesSel((g) => g.num_pages))}
       ${chartCard(spq, qSeriesSel((g) => g.n), { bins: 12 })}
       ${chartCard("best ANLS of question", qSeriesSel((g) => g.maxAnls), { min: 0, max: 1, bins: 20 })}
+    </div>
+
+    <h3 class="sec">Sampling efficiency (all samples, solved questions)</h3>
+    <div class="chart-grid">
+      ${chartCard("trials to first correct rollout",
+        [{ label: `solved Qs`, color: "#6ea8fe", values: trials }],
+        { min: 1, max: maxTrials + 1, bins: maxTrials })}
     </div>
 
     <h3 class="sec">Category</h3>
