@@ -111,12 +111,19 @@ class OneStepTaskRunner:
 def main(config):
     from time import time
 
+    from verl.experimental.reward_loop import migrate_legacy_reward_impl
     from verl.trainer.main_ppo import run_ppo
 
     start_time = time()
 
     # Automatically set `config.trainer.device = npu` when running on Ascend NPU.
     auto_set_device(config)
+
+    # one_step_off main() reimplemented the base main() but dropped this — without it
+    # config.custom_reward_function is never migrated to config.reward.custom_reward_function,
+    # so the reward_loop falls back to default_compute_score (NotImplementedError on our
+    # data_source). Mirror verl/trainer/main_ppo.py:main().
+    config = migrate_legacy_reward_impl(config)
 
     # TODO: unify rollout config with actor_rollout_ref
     config.actor_rollout_ref.rollout.nnodes = config.rollout.nnodes

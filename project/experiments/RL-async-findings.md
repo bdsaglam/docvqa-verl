@@ -105,3 +105,71 @@ Companion to `RL-OPD-design.md` (the plan) and `SFT-synthesis.md` (the SFT verdi
 
 _Full driver timeline + every cron-fire state: `outputs/ASYNC-RL-DRIVER-PLAN.md`. Result card:
 `outputs/RESULT-4b-async-curriculum.md`._
+
+---
+
+# Addendum 2026-06-12/13 — the speed sprint: profile-driven bottleneck migration
+
+_Context: 120-step production run (`docvqa-grpo-4b-curric-lr1e4-cg`, lr 1e-4, batch8 n8,
+thinking OFF per A/B result) had to fit a ~12h window incl. eval. We assumed VLM-bound;
+per-phase profiling falsified that and the bottleneck then MIGRATED twice as each fix
+landed. Method: agent_loop.py now has permanent per-phase timers (t_gen/t_exec/t_vlm/
+t_template + gen_tokens) flowing into the traj dump — profile any config with a 2-step
+shuffled run (batch8 n4) and read the split._
+
+## Bottleneck migration (measured, 64-rollout profiles)
+
+| stage | config | split | per-stream tok/s | rollout p50/p90/max |
+|---|---|---|---|---|
+| assumed | — | "VLM-bound" | — | — |
+| measured | eager policy engine | **gen 80%** / vlm 19% / exec 0.4% | 15.8 | 91/276/509s |
+| graphs on | + CUDA graphs (2 fixes below) | gen 60% / **vlm 39%** | **59.9 (3.8x)** | 54/117/212s |
+| production | 3 rollout + 1 train GPUs | **update_actor ~420s = 70% of step** | gen idle (5s/step) | step ~580s |
+| rebalanced | 2 rollout + 2 train | (expected ~310s/step) | — | — |
+
+Moral: in disaggregated one-step-off, generation hides behind training — so the binding
+constraint is whichever side is SLOWER, and every speedup flips it. Profile, don't assume.
+
+## CUDA graphs on Qwen3.5-GDN + LoRA: the two capture blockers
+
+`enforce_eager=True` (verl default) was costing 3.8x on decode — GDN hybrid layers are
+exactly the many-small-kernels workload CUDA graphs amortize. `enforce_eager=False` needs:
+
+1. **vllm#36372 (dummy-LoRA capture IndexError):** warmup builds dummy LoRAs for ALL
+   linears incl. fused GDN `in_proj_qkvz` whose packed mapping declares 2 subloras vs 4
+   output slices → `set_lora` IndexError. Fix: blocklist GDN modules
+   (`in_proj_qkvz/in_proj_ba/conv1d/out_proj`) from `supported_lora_modules`
+   (patch in `patches/vllm-0.17-gdn-lora-cudagraph.patch.md`, applied to .venv-rl2).
+   Sound because our adapter is LM-standard-modules only → GDN never carries LoRA;
+   capture state == runtime state. Validated: coherent rollouts, reward band unchanged.
+2. **GDN conv-state cache assert (`num_cache_lines >= batch`):** at gpu_mem_util=0.25 the
+   GDN state cache has fewer slots than the default max capture batch (512). Fix:
+   `rollout.max_num_seqs=64` (= actual concurrency batch*n; capture sizes track it).
+
+## VLM-side levers (landed before profiling showed they weren't the gate — still real)
+
+- **Client-side downscale to 16,777,216 px** (= the 27B processor's `size.longest_edge`
+  cap, i.e. max AREA): lossless w.r.t. what the VLM sees (server resizes anyway, but
+  only after paying b64+HTTP+decode at full res). Sits AFTER agent cropping (sandbox
+  crops full-res pages from disk) → survey-coarse/crop-fine unaffected. PNG kept.
+  Only ~1% of training-pool pages exceed the cap (mostly protects eval maps/posters).
+  Also moved image prep off the event loop (was blocking all rollouts in the worker).
+- **Weighted least-loaded endpoint pool** in tools.py (`url@w|url@w` spec, health-bench
+  +60s-retry, transport failover): worked (remote took ~42% with tunnel latency —
+  latency-aware self-correction, by design less than the 3/5 GPU share). Retired to
+  single-endpoint remote-only when 3 local GPUs went to rollout engines; pool code now
+  runs as pool-of-1 (retry/bench still cushions tunnel blips).
+- **Serve flags for the perception workload** (1 image ~16K tok prefill, median 45-tok
+  output, thinking off): `--max-model-len 32768 --max-num-batched-tokens 32768
+  --limit-mm-per-prompt '{"image":1}' --gpu-memory-utilization 0.90 --async-scheduling`,
+  and NO `--enforce-eager` on a serve-only box (that flag is for verl-managed engines).
+  vLLM v1 prefix caching + our payload order (system -> image -> query) makes same-page
+  re-looks hit the 16K-token image prefill in cache.
+
+## Train-side numbers to beat (2026-06-13, 1 train GPU, micro=1)
+
+update_actor ~420s + old_log_prob ~71s + ref ~60s + sync ~32s ≈ 580s serial / step
+(64 trajs, ~213K tokens global, ppo_micro_batch_size_per_gpu=1 = 64 sequential fwd+bwd).
+Unexplored safe-ish levers if needed: actor micro-batch 2 (logits-memory risk on long-seq
+batches — fp32/bf16 [B,T,vocab] materialization), use_dynamic_bsz (compat with
+use_remove_padding=False unverified), fused-CE kernels. We took FSDP-x2 instead (zero risk).

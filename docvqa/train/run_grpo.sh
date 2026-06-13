@@ -52,7 +52,11 @@ VAL_FILES=${VAL_FILES:-data/pool/curriculum_rl.parquet}
 SHUFFLE=${SHUFFLE:-False}                                       # False = keep curriculum order
 EXP_NAME=${EXP_NAME:-docvqa-grpo-4b-async}
 PROJECT_NAME=${PROJECT_NAME:-docvqa-verl-rl}
-VLM_BASE_URL=${VLM_BASE_URL:-http://localhost:8927}
+# '|'-separated weighted endpoint pool (see docvqa/tools.py EndpointPool): local DP2 on
+# :8927 + remote DP3 tunneled on :8928. Least-loaded + health-aware — a dead endpoint is
+# benched and re-probed every 60s, so the remote VLM starts absorbing traffic the moment
+# it comes up, mid-run, no restart needed.
+VLM_BASE_URL=${VLM_BASE_URL:-'http://localhost:8927@2|http://localhost:8928@3'}
 VLM_MODEL=${VLM_MODEL:-Qwen/Qwen3.5-27B}
 
 # --- disaggregation: rollout GPU(s) + train GPU(s) (must sum to # visible policy GPUs) ---
@@ -77,6 +81,14 @@ MAX_RESPONSE_LEN=${MAX_RESPONSE_LEN:-16384}     # agent trajectories are long
 # — it breaks the CUDA-IPC weight transfer: pidfd_getfd "Operation not permitted" -> hang.)
 ROLLOUT_GPU_MEM=${ROLLOUT_GPU_MEM:-0.25}
 
+# CUDA graphs (enforce_eager=False) are a ~3.8x per-stream decode speedup for this GDN-hybrid
+# model (profiled 15.8 -> 59.9 tok/s; rollout tail 509s -> 212s) and need TWO companion fixes:
+# (1) the vllm GDN-LoRA capture patch (patches/vllm-0.17-gdn-lora-cudagraph.patch.md, applied to
+# .venv-rl2) — without it dummy-LoRA warmup dies with IndexError (vllm#36372); (2) max_num_seqs
+# capped to actual concurrency (>= TRAIN_BATCH_SIZE*ROLLOUT_N) so capture batches never exceed
+# the GDN conv-state cache lines at our low gpu_memory_utilization (assert num_cache_lines >=
+# batch). Set ENFORCE_EAGER=True to fall back if either breaks after an env change.
+#
 # load_format MUST be non-"dummy" for Qwen3.5 (hybrid GDN/linear-attn model). With the verl
 # default `load_format=dummy`, vLLM inits the rollout engine with RANDOM weights and relies on
 # verl's FSDP->vLLM base-weight sync. But that sync ships the GDN `linear_attn` projections under
@@ -109,7 +121,7 @@ python3 -m verl.experimental.one_step_off_policy.main_ppo \
     data.truncation=error \
     data.filter_overlong_prompts=True \
     data.return_raw_chat=True \
-    +data.apply_chat_template_kwargs.enable_thinking=True \
+    +data.apply_chat_template_kwargs.enable_thinking=${ENABLE_THINKING:-False} \
     custom_reward_function.path=docvqa/reward.py \
     custom_reward_function.name=compute_score \
     actor_rollout_ref.hybrid_engine=False \
@@ -133,7 +145,8 @@ python3 -m verl.experimental.one_step_off_policy.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${ROLLOUT_TP} \
     actor_rollout_ref.rollout.gpu_memory_utilization=${ROLLOUT_GPU_MEM} \
     actor_rollout_ref.rollout.n=${ROLLOUT_N} \
-    actor_rollout_ref.rollout.enforce_eager=True \
+    actor_rollout_ref.rollout.enforce_eager=${ENFORCE_EAGER:-False} \
+    actor_rollout_ref.rollout.max_num_seqs=${MAX_NUM_SEQS:-64} \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \

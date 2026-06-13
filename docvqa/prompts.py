@@ -117,7 +117,7 @@ _TASK_BODY = (
     "Once you have the candidate set, compare or count in Python.\n\n"
 
     "## OUTPUT FORMAT (every turn)\n"
-    "1. Think inside <think>...</think>: plan, reflect, decide next step.\n"
+    "1. Briefly state your reasoning — what you now know and what you'll do next.\n"
     "2. Write a single Python code block in triple backticks:\n"
     "   ```python\n"
     "   ...\n"

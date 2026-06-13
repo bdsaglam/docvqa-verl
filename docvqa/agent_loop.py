@@ -152,7 +152,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": first_user},
         ]
+        t_first_template = time.monotonic()
         prompt_ids: list[int] = await self.apply_chat_template(messages)
+        t_first_template = time.monotonic() - t_first_template
         response_ids: list[int] = []
         response_mask: list[int] = []
 
@@ -182,15 +184,26 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         multi_block_turns = 0
         empty_output_turns = 0
 
+        # Per-phase wall-clock accumulators (seconds). batch_look runs inside
+        # interp.execute (the subprocess blocks on the IPC call), so t_exec
+        # CONTAINS t_vlm; pure code execution = t_exec - t_vlm. Residual
+        # wall_clock - (t_gen + t_exec + t_template) = scheduling/IPC overhead.
+        timings = {"t_gen_s": 0.0, "t_exec_s": 0.0, "t_vlm_s": 0.0, "t_template_s": 0.0}
+        gen_tokens = 0
+
         try:
 
             async def _batch_look_host(requests: list[dict]) -> list[str]:
-                return await host_tools.batch_look(
-                    requests,
-                    vlm_client,
-                    self._vlm_base_url,
-                    self._vlm_model_id,
-                )
+                t0 = time.monotonic()
+                try:
+                    return await host_tools.batch_look(
+                        requests,
+                        vlm_client,
+                        self._vlm_base_url,
+                        self._vlm_model_id,
+                    )
+                finally:
+                    timings["t_vlm_s"] += time.monotonic() - t0
 
             def _batch_look_sync(requests):
                 """Bridge to async — invoked from a host-side thread by IPC."""
@@ -217,6 +230,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 stops = ["<|im_end|>"]
                 if self._knobs["extra_obs_stops"]:
                     stops += ["\nuser\n", "\n## Turn", "\n## Output"]
+                t0 = time.monotonic()
                 token_out = await self.server_manager.generate(
                     request_id=request_id,
                     prompt_ids=prompt_ids + response_ids,
@@ -226,7 +240,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                         "stop": stops,
                     },
                 )
+                timings["t_gen_s"] += time.monotonic() - t0
                 assistant_ids = list(token_out.token_ids)
+                gen_tokens += len(assistant_ids)
                 response_ids += assistant_ids
                 response_mask += [1] * len(assistant_ids)
                 assistant_text = self.tokenizer.decode(
@@ -271,11 +287,13 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                             turn,
                             max_iter,
                             observation,
+                            timings,
                         )
                         termination = "parse_error"
                         break
                 else:
                     parse_error_strikes = 0
+                    t0 = time.monotonic()
                     try:
                         result = await self.loop.run_in_executor(
                             None,
@@ -284,6 +302,8 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                         )
                     except (CodeInterpreterError, SyntaxError) as e:
                         result = f"[Error] {e}"
+                    finally:
+                        timings["t_exec_s"] += time.monotonic() - t0
 
                     if isinstance(result, tuple) and isinstance(result[0], FinalOutput):
                         final, captured = result
@@ -296,6 +316,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                             turn,
                             max_iter,
                             observation,
+                            timings,
                         )
                         termination = "submit"
                         break
@@ -309,6 +330,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                             turn,
                             max_iter,
                             observation,
+                            timings,
                         )
                         termination = "submit"
                         break
@@ -334,6 +356,7 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     turn,
                     max_iter,
                     observation,
+                    timings,
                 )
 
                 if len(response_ids) >= self._response_length_cap - 256:
@@ -364,6 +387,9 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             "multi_block_turns": multi_block_turns,
             "empty_output_turns": empty_output_turns,
             "wall_clock_s": time.monotonic() - wall_start,
+            **{k: round(v, 3) for k, v in timings.items()},
+            "t_first_template_s": round(t_first_template, 3),
+            "gen_tokens": gen_tokens,
             "doc_id": meta["doc_id"],
             "question_id": question_id,
             "category": category,
@@ -397,13 +423,17 @@ class DocVQAReplAgentLoop(AgentLoopBase):
         turn: int,
         max_iter: int,
         output: str,
+        timings: dict | None = None,
     ) -> None:
         text = build_observation_message(turn, max_iter, output)
         messages.append({"role": "user", "content": text})
+        t0 = time.monotonic()
         obs_ids = await self.apply_chat_template(
             [{"role": "user", "content": text}],
             remove_system_prompt=True,
         )
+        if timings is not None:
+            timings["t_template_s"] += time.monotonic() - t0
         # vLLM stops at <|im_end|> — the chat template separator newline
         # between the assistant turn and the next message is not part of the
         # model's output, and apply_chat_template(remove_system_prompt=True)
