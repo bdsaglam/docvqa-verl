@@ -69,6 +69,20 @@ python docvqa/scripts/eval.py \
 - Stop when you have ~400–600 KEPT with multi-page coverage (the ≥11p docs are dripped
   through the pool ordering — don't stop on just the easy head).
 
+### Inspecting trajectories (trajviewer — works OOB)
+`eval.py --run-dir outputs/runs/<name>` writes exactly the layout the trajviewer expects
+(`<run>/results.json`, `<run>/tasks/<doc>/{result.json, trajectories.jsonl}` with `messages`).
+**Caveat:** `outputs/` is per-worktree (NOT a shared symlink like `data/pool/`), so run
+generation **from this repo (docvqa-verl)** and it lands in `docvqa-verl/outputs/runs/`, which
+the viewer reads by default. Launch the viewer:
+```bash
+.venv/bin/python tools/trajviewer/app.py --port 8765 --runs-dir outputs/runs
+```
+The two existing runs were moved here from the rl worktree so they survive cleanup + are
+viewable: `teacher-gen-pool` (concat, partial — resume continues into it) and
+`teacher-gen-pool-parsefirst-archived` (26 docs/146 kept, parse_first-era — inspect only, do
+NOT feed to SFT; it predates the concat parity fix).
+
 ### Pool composition & how many to generate on
 Pool = **405 prompts**: 250 single-page (62%), 110 at 2–3p (27%), 45 at 11–30p (11%) →
 **38% multi-page**, mean 3.7 pages, max 30 (31–89p docs excluded — ~800s-tail rollouts).
