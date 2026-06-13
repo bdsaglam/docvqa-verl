@@ -47,8 +47,16 @@ def rebuild_ipc(handle: tuple[Callable, tuple], device_id: int | None = None) ->
     list_args = list(args)
     if device_id is not None:
         # the key is to change device id to the current device id
-        # in case two processes have different CUDA_VISIBLE_DEVICES
-        list_args[6] = device_id
+        # in case two processes have different CUDA_VISIBLE_DEVICES.
+        # torch's legacy CUDA-caching-allocator IPC reduces to `rebuild_cuda_tensor`,
+        # whose `storage_device` field sits at positional index 6 (verified for
+        # torch 2.10). But with `expandable_segments:True` (which verl enables on the
+        # rollout worker) torch reduces via a different rebuild func with a shorter
+        # arg tuple, so a blind `list_args[6] = device_id` raises IndexError. Only
+        # patch the device when this is actually the rebuild_cuda_tensor path; for
+        # other reducers the IPC handle already carries the correct device.
+        if getattr(func, "__name__", "") == "rebuild_cuda_tensor" and len(list_args) > 6:
+            list_args[6] = device_id
     buffer = func(*list_args)
     return buffer
 

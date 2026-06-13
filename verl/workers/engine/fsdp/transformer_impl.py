@@ -1182,7 +1182,15 @@ class FSDPEngineWithLMHead(FSDPEngine):
 
                 if calculate_entropy:
                     if not self.engine_config.entropy_checkpointing:
-                        entropy = verl_F.entropy_from_logits(logits)
+                        # Chunk over the flattened (bsz*seq) token dim to bound peak memory.
+                        # The full-vocab logits [bsz, seq, vocab] otherwise materialize a
+                        # ~16GB fp32 temp in entropy_from_logits and OOM the rollout GPU during
+                        # the old_log_prob recompute (bsz=1 makes the dim-0 chunking helper a
+                        # no-op unless we flatten first). Math is identical (entropy is per-token).
+                        flat_logits = logits.reshape(-1, logits.shape[-1])
+                        entropy = verl_F.entropy_from_logits_with_chunking(flat_logits).reshape(
+                            logits.shape[:-1]
+                        ).to(logits.dtype)
                     else:
                         entropy = torch.utils.checkpoint.checkpoint(verl_F.entropy_from_logits, logits)
 

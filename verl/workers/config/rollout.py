@@ -95,6 +95,11 @@ class AgentLoopConfig(BaseConfig):
     # Fully qualified class name for custom AgentLoopManager (e.g., "mypackage.module.MyManager").
     # Security: This class will be dynamically imported via importlib. Only use trusted class paths.
     agent_loop_manager_class: Optional[str] = None
+    # docvqa-verl patch: optional free-form subtree for custom agent loops (e.g. DocVQAReplAgentLoop
+    # reads `rollout.agent.docvqa.{vlm_base_url,vlm_model_id,parse_first_fence}`). Declared here so
+    # hydra's structured `instantiate()` accepts the recipe's `+actor_rollout_ref.rollout.agent.docvqa.*`
+    # overrides instead of raising `unexpected keyword argument 'docvqa'`.
+    docvqa: dict = field(default_factory=dict)
 
 
 @dataclass
