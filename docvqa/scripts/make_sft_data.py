@@ -39,6 +39,11 @@ def _approx_tokens(messages: list[dict], tokenizer) -> int:
 
 def filter_and_project(rows: list[dict], max_per_question: int | None,
                        max_tokens: int | None = None, tokenizer=None) -> list[dict]:
+    # Assistant turns are kept VERBATIM (incl. multi-fence ones): the deployed
+    # codeact_chat scaffold concatenates and runs every fenced block, so multi-fence
+    # turns are valid actions, not contamination. The model is trained to emit what
+    # it should emit; the scaffold does the parsing at inference (see agent_loop
+    # _extract_code_concat / concat_fences). No first-fence truncation.
     by_q: dict[str, list[dict]] = defaultdict(list)
     dropped_long = 0
     for r in rows:

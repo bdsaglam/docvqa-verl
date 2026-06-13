@@ -107,6 +107,10 @@ def _build_loop(base_url: str, model: str,
                     "docvqa": {
                         "vlm_base_url": vlm_base_url,
                         "vlm_model_id": vlm_model,
+                        # Deploy-parity with codeact_chat: concat all complete fenced
+                        # blocks per turn (matches the leaderboard scaffold). Applies to
+                        # both teacher generation and SFT-model eval run through eval.py.
+                        "concat_fences": True,
                     },
                 },
                 "multi_turn": {},
