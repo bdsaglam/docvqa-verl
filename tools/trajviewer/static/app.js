@@ -607,7 +607,7 @@ function catBarCard(title, items, color) {
 
 const C_KEEP = "#4caf7d", C_DROP = "#e5736f", C_ALL = "#4caf7d", C_MIX = "#d9b04a", C_NONE = "#e5736f";
 
-const statsState = { subset: "all" }; // all | kept | dropped
+const statsState = { subset: "all" }; // all | correct | incorrect
 let statsRows = [], statsRun = "";
 
 async function viewStats(run) {
@@ -628,21 +628,21 @@ function renderStats() {
   const totalWrong = statsRows.length - totalCorrect;
 
   // sample subset the figures describe
-  const rows = sub === "kept" ? statsRows.filter((r) => r.is_correct === true)
-    : sub === "dropped" ? statsRows.filter((r) => r.is_correct !== true)
+  const rows = sub === "correct" ? statsRows.filter((r) => r.is_correct === true)
+    : sub === "incorrect" ? statsRows.filter((r) => r.is_correct !== true)
       : statsRows;
   const groups = buildGroups(rows);
   groups.forEach((g) => { g.num_pages = g.samples[0]?.num_pages ?? null; });
 
-  // build series — split by kept/dropped (or solve-status) only in "all" view;
-  // a chosen subset is a single homogeneous series.
+  // build series — split by correct/incorrect (or solve-status) only in "all"
+  // view; a chosen subset is a single homogeneous series.
   let sampleSeries, qSeriesSel;
   if (sub === "all") {
     const correct = statsRows.filter((r) => r.is_correct === true);
     const wrong = statsRows.filter((r) => r.is_correct !== true);
     sampleSeries = (key) => [
-      { label: "kept (correct)", color: C_KEEP, values: correct.map((r) => r[key]) },
-      { label: "dropped", color: C_DROP, values: wrong.map((r) => r[key]) },
+      { label: "correct", color: C_KEEP, values: correct.map((r) => r[key]) },
+      { label: "incorrect", color: C_DROP, values: wrong.map((r) => r[key]) },
     ];
     const gAll = groups.filter((g) => g.allCorrect);
     const gMix = groups.filter((g) => g.anyCorrect && !g.allCorrect);
@@ -653,10 +653,9 @@ function renderStats() {
       { label: "none", color: C_NONE, values: gNone.map(fn) },
     ];
   } else {
-    const col = sub === "kept" ? C_KEEP : C_DROP;
-    const lab = sub === "kept" ? "kept (correct)" : "dropped (incorrect)";
-    sampleSeries = (key) => [{ label: lab, color: col, values: rows.map((r) => r[key]) }];
-    qSeriesSel = (fn) => [{ label: lab, color: col, values: groups.map(fn) }];
+    const col = sub === "correct" ? C_KEEP : C_DROP;
+    sampleSeries = (key) => [{ label: sub, color: col, values: rows.map((r) => r[key]) }];
+    qSeriesSel = (fn) => [{ label: sub, color: col, values: groups.map(fn) }];
   }
 
   // category distribution: plain per-category question counts for the current
@@ -668,12 +667,12 @@ function renderStats() {
   const subByCat = {};
   for (const g of groups) { const c = g.category || "—"; subByCat[c] = (subByCat[c] || 0) + 1; }
   const catItems = Object.keys(fullByCat).sort((a, b) => fullByCat[b] - fullByCat[a]).map((c) => [c, subByCat[c] || 0]);
-  const catColor = sub === "kept" ? C_KEEP : sub === "dropped" ? C_DROP : "#6ea8fe";
+  const catColor = sub === "correct" ? C_KEEP : sub === "incorrect" ? C_DROP : "#6ea8fe";
   const catCard = catBarCard(`questions per category${sub === "all" ? "" : " (" + sub + ")"}`, catItems, catColor);
 
   const nDocs = new Set(rows.map((r) => r.doc_id)).size;
   const sbtn = (k, lab) => `<button class="btn ${sub === k ? "active" : ""}" data-sub="${k}">${lab}</button>`;
-  const sHead = sub === "all" ? "Per-trajectory (sample) — kept vs dropped" : `Per-trajectory — ${sub} samples`;
+  const sHead = sub === "all" ? "Per-trajectory (sample) — correct vs incorrect" : `Per-trajectory — ${sub} samples`;
   const qHead = sub === "all" ? "Per-question — by solve status" : `Per-question — ${sub} subset`;
   const spq = sub === "all" ? "samples per question" : `${sub} samples per question`;
 
@@ -682,9 +681,8 @@ function renderStats() {
     <div class="toolbar">
       <span class="count">subset for figures:</span>
       ${sbtn("all", `all samples (${statsRows.length})`)}
-      ${sbtn("kept", `kept · correct (${totalCorrect})`)}
-      ${sbtn("dropped", `dropped · incorrect (${totalWrong})`)}
-      <span class="count">— kept = the trajectories you'd SFT on</span>
+      ${sbtn("correct", `correct (${totalCorrect})`)}
+      ${sbtn("incorrect", `incorrect (${totalWrong})`)}
     </div>
     <div class="meta-strip" style="margin-bottom:14px">
       <span class="pill"><b>${nDocs}</b> docs</span>
