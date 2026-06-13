@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,12 @@ _DEFAULTS: dict[str, Any] = {
     # trailing tool-output fence after its code, last-fence would grab the fabricated block —
     # first-fence always takes the legit one. The format reward penalizes >1-block turns.
     "parse_first_fence": True,
+    # Concatenate ALL parseable fenced blocks per turn and run them as one cell —
+    # verbatim parity with the deployed docvqa codeact_chat_solver `_extract_code`
+    # (the leaderboard scaffold). Overrides parse_first_fence when True. Set True for
+    # teacher generation + SFT-model eval so train/eval/deploy share fence semantics;
+    # left False so the (already-finished) RL recipe's parse_first behavior is intact.
+    "concat_fences": False,
     # Extra generation stops that cut the model's role-played next-turn tail (fabricated
     # "\nuser\n" / "## Turn" / "## Output" observations). ON for SFT DATA COLLECTION (we want
     # clean teacher trajectories) and eval. **RL sets this False** — the policy must *learn*
@@ -85,6 +92,29 @@ def _adaptive_max_iter(num_pages: int, knobs: dict) -> int:
 # role-plays after its code fence: the plain role label and the observation headers
 # emitted by build_observation_message ("## Turn {n}/{m}", "## Output").
 _HALLUC_OBS_MARKERS = ("\nuser\n", "\n## Turn", "\n## Output")
+
+# Verbatim parity with the deployed docvqa codeact_chat_solver `_extract_code`
+# (~/repos/docvqa src/docvqa/solvers/codeact_chat_solver.py): strip paired
+# <think>...</think>, then CONCATENATE every fenced code block and run them as one
+# cell. This is the scaffold the leaderboard runs, so concat_fences=True makes our
+# generation + eval byte-faithful to deploy (vs parse_first_fence, which runs only
+# the first block — fine for single-fence turns but divergent on multi-fence ones).
+_CC_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_CC_FENCE_RE = re.compile(r"```(?:python|py)?[ \t]*\n(.*?)```", re.DOTALL)
+
+
+def _extract_code_concat(text: str) -> str:
+    """codeact_chat `_extract_code`: strip paired <think>, then concatenate every
+    COMPLETE ```python ... ``` fenced block (opening + closing fence) and run them
+    as one cell. Byte-identical to the deployed solver.
+
+    The closing-fence requirement is the completeness filter: a block truncated by
+    the per-turn token cap has no closing ``` so the regex never matches it (ignored),
+    and arbitrary prose / rationale between blocks isn't fenced so it's ignored too —
+    only well-delimited code blocks survive. Blocks are concatenated (not parsed in
+    isolation) so a statement legitimately split across fences still runs."""
+    blocks = _CC_FENCE_RE.findall(_CC_THINK_RE.sub("", text or ""))
+    return "\n\n".join(b.strip() for b in blocks if b.strip()).strip()
 
 
 def _strip_hallucinated_observation(text: str) -> str:
@@ -270,7 +300,11 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 fences = parse_python_fences(clean_text)
                 if len(fences) > 1:
                     multi_block_turns += 1
-                if not fences:
+                if self._knobs.get("concat_fences"):
+                    # Deploy-parity (codeact_chat): run all complete fenced blocks
+                    # concatenated. Empty -> no code (parse-error path below).
+                    code = _extract_code_concat(clean_text) or None
+                elif not fences:
                     code = None
                 elif self._knobs["parse_first_fence"]:
                     code = fences[0]
