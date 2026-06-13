@@ -23,15 +23,17 @@ session's learnings (VLM throughput, RL, scaffold parity). Work happens on branc
 - Perception uses a **load-balanced pool** of `:8927`+`:8928` (see VLM learnings).
 
 ## Resume generation (the long pole — hours)
-Pool file (405 prompts, 38% multi-page incl. 45 docs ≥11pages) lives at
-`~/repos/docvqa-verl-rl/data/pool/teacher_gen_pool.json` (rebuild with
-`python -m docvqa.scripts.make_teacher_gen_pool` — needs `data/pool/curriculum_rl.parquet`).
+Pool file (405 prompts, 38% multi-page incl. 45 docs ≥11pages) is at
+`data/pool/teacher_gen_pool.json` (present in this repo — `data/pool/` is the shared
+physical dir; the rl worktree symlinks to it). Rebuild with
+`python -m docvqa.scripts.make_teacher_gen_pool` — needs `data/pool/curriculum_rl.parquet`
+(also present here).
 
 ```bash
 # from this repo, with the RL venv active (see Environment):
 POOL='http://localhost:8927@2|http://localhost:8928@3'   # weighted least-loaded pool
 python docvqa/scripts/eval.py \
-  --questions /home/baris/repos/docvqa-verl-rl/data/pool/teacher_gen_pool.json \
+  --questions data/pool/teacher_gen_pool.json \
   --base-url http://localhost:8932/v1 --model Qwen/Qwen3.5-27B \
   --vlm-base-url "$POOL" --vlm-model Qwen/Qwen3.5-27B \
   --concurrency 24 --n 8 --temperature 0.6 --top-p 0.95 --top-k 20 \
@@ -45,6 +47,27 @@ python docvqa/scripts/eval.py \
   finish; **resumable** (`--resume` skips done questions). Stop anytime; trajectories persist.
 - Stop when you have ~400–600 KEPT with multi-page coverage (the ≥11p docs are dripped
   through the pool ordering — don't stop on just the easy head).
+
+### Pool composition & how many to generate on
+Pool = **405 prompts**: 250 single-page (62%), 110 at 2–3p (27%), 45 at 11–30p (11%) →
+**38% multi-page**, mean 3.7 pages, max 30 (31–89p docs excluded — ~800s-tail rollouts).
+
+**Observed throughput** (parse_first run, `--concurrency 24 --n 8`, 27B agent DP2 + 5-GPU
+VLM pool): **26 prompts → 208 rollouts → 146 KEPT in 36 min** (easy head, incl. startup ramp):
+- ~**5.8 rollouts/min** (~1.4 min/prompt at n=8) on single-page-dominant; **~4/min blended**
+  with the slower multi-page tail.
+- keep rate ~**70%** easy head, lower on multi-page (n=8 raises the chance ≥1 of 8 solves).
+
+**Estimation:**
+```
+time_min ≈ (N_prompts × n) / R        R ≈ 5.8 (single-page) … ~4 (blended)
+kept     ≈ N_prompts × keep_rate × min(passes, --max-per-question)
+          keep_rate ≈ 0.6–0.7;  with --max-per-question 2 → ~1.5–1.8 kept/prompt
+```
+- Full 405 pool = 3240 rollouts → **~9–14 h** → ~600–700 kept (cap=2).
+- ~250 kept (matches the prior SFT that beat baseline) → ~150–180 prompts → ~5–7 h.
+- It's resumable + easy-first ordered, so: run the full pool, stop at your KEPT target —
+  but far enough that multi-page docs (dripped later) are represented.
 
 ## Pipeline after generation
 ```bash
