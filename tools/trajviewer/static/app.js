@@ -207,7 +207,7 @@ async function viewRuns() {
 // ----------------------------------------------------------------------- //
 // view: triage table
 // ----------------------------------------------------------------------- //
-const triageState = { sort: "anls", dir: 1, filter: "all", q: "" };
+const triageState = { sort: "rate", dir: 1, filter: "all", q: "", expanded: new Set() };
 let triageRows = [];
 
 async function viewTriage(run) {
@@ -215,7 +215,47 @@ async function viewTriage(run) {
   app.innerHTML = `<div class="loading">Loading rollouts…</div>`;
   const data = await getJSON(`/api/runs/${encodeURIComponent(run)}/rollouts`);
   triageRows = data.rollouts;
+  triageState.expanded = new Set();
   renderTriage(run);
+}
+
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+
+// collapse sample-level rollouts into one group per question_id
+function buildGroups(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    let g = map.get(r.question_id);
+    if (!g) {
+      g = { question_id: r.question_id, doc_id: r.doc_id, category: r.category,
+            question: r.question, gold_answer: r.gold_answer, samples: [] };
+      map.set(r.question_id, g);
+    }
+    g.samples.push(r);
+  }
+  const groups = [];
+  for (const g of map.values()) {
+    g.samples.sort((a, b) => (a.sample_idx ?? 0) - (b.sample_idx ?? 0));
+    const anls = g.samples.map((s) => s.anls ?? 0);
+    g.n = g.samples.length;
+    g.nCorrect = g.samples.filter((s) => s.is_correct === true).length;
+    g.rate = g.nCorrect / g.n;
+    g.anyCorrect = g.nCorrect > 0;
+    g.allCorrect = g.nCorrect === g.n;
+    g.meanAnls = mean(anls);
+    g.maxAnls = Math.max(...anls);
+    g.meanTurns = mean(g.samples.map((s) => s.num_turns ?? 0));
+    g.meanLooks = mean(g.samples.map((s) => s.vlm_calls ?? 0));
+    g.meanWall = mean(g.samples.map((s) => s.wall_clock_s ?? 0));
+    groups.push(g);
+  }
+  return groups;
+}
+
+function groupBadge(g) {
+  if (g.allCorrect) return `<span class="badge ok">✓ ${g.nCorrect}/${g.n}</span>`;
+  if (g.anyCorrect) return `<span class="badge mid">~ ${g.nCorrect}/${g.n}</span>`;
+  return `<span class="badge bad">✗ 0/${g.n}</span>`;
 }
 
 function renderTriage(run) {
@@ -226,71 +266,125 @@ function renderTriage(run) {
       (Collection/eval may still be running, or this run was cleaned up.)</div>`;
     return;
   }
-  const cols = [
-    ["category", "cat"], ["question_id", "question"], ["is_correct", "ok"],
-    ["anls", "anls"], ["num_turns", "turns"], ["vlm_calls", "looks"],
-    ["wall_clock_s", "wall_s"], ["termination", "term"],
-  ];
-  let rows = triageRows.slice();
-  if (triageState.filter === "correct") rows = rows.filter((r) => r.is_correct === true);
-  else if (triageState.filter === "wrong") rows = rows.filter((r) => r.is_correct === false);
-  else if (triageState.filter === "partial") rows = rows.filter((r) => r.is_correct === false && r.anls > 0);
+  const allGroups = buildGroups(triageRows);
+
+  // run-level stats: docs / questions / samples are three different things
+  const nSamples = triageRows.length;
+  const nQuestions = allGroups.length;
+  const nDocs = new Set(triageRows.map((r) => r.doc_id)).size;
+  const sampleCorrect = triageRows.filter((r) => r.is_correct === true).length;
+  const nSolved = allGroups.filter((g) => g.anyCorrect).length;
+  const nUnsolved = allGroups.filter((g) => !g.anyCorrect).length;
+  const nMixed = allGroups.filter((g) => g.anyCorrect && !g.allCorrect).length;
+
+  // filter groups
+  let groups = allGroups;
+  if (triageState.filter === "solved") groups = groups.filter((g) => g.anyCorrect);
+  else if (triageState.filter === "unsolved") groups = groups.filter((g) => !g.anyCorrect);
+  else if (triageState.filter === "mixed") groups = groups.filter((g) => g.anyCorrect && !g.allCorrect);
   if (triageState.q) {
     const q = triageState.q.toLowerCase();
-    rows = rows.filter((r) =>
-      (r.question || "").toLowerCase().includes(q) ||
-      (r.question_id || "").toLowerCase().includes(q) ||
-      (r.gold_answer || "").toLowerCase().includes(q) ||
-      (r.submitted_answer || "").toLowerCase().includes(q));
+    groups = groups.filter((g) =>
+      (g.question || "").toLowerCase().includes(q) ||
+      (g.question_id || "").toLowerCase().includes(q) ||
+      (g.gold_answer || "").toLowerCase().includes(q) ||
+      g.samples.some((s) => (s.submitted_answer || "").toLowerCase().includes(q)));
   }
+
   const s = triageState.sort, dir = triageState.dir;
-  rows.sort((a, b) => {
+  groups = groups.slice().sort((a, b) => {
     let x = a[s], y = b[s];
     if (x == null) x = -Infinity; if (y == null) y = -Infinity;
     if (typeof x === "string") return dir * x.localeCompare(y);
     return dir * (x - y);
   });
 
-  const nCorrect = triageRows.filter((r) => r.is_correct === true).length;
-  const nWrong = triageRows.filter((r) => r.is_correct === false).length;
-  const nPartial = triageRows.filter((r) => r.is_correct === false && r.anls > 0).length;
+  const cols = [
+    ["", ""], ["category", "cat"], ["", "question"], ["rate", "solved"],
+    ["meanAnls", "anls μ"], ["maxAnls", "anls↑"], ["meanTurns", "turns μ"],
+    ["meanLooks", "looks μ"], ["meanWall", "wall μ"], ["n", "n"],
+  ];
   const head = cols.map(([k, lab]) =>
-    `<th class="sortable" data-k="${k}">${lab}${s === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("");
-  const body = rows.map((r) => {
-    const sidx = r.sample_idx ?? 0;
-    const href = `#/run/${encodeURIComponent(run)}/r/${encodeURIComponent(r.doc_id)}/${encodeURIComponent(r.question_id)}/${sidx}`;
-    return `<tr onclick="location.hash='${href}'">
-      <td>${esc(r.category)}</td>
-      <td><div class="mono">${esc(r.question_id)}${sidx ? " #" + sidx : ""}</div>
-          <div style="color:var(--muted);font-size:12px">${esc((r.question || "").slice(0, 90))}</div></td>
-      <td>${correctBadge(r.is_correct, r.anls)}</td>
-      <td class="num">${fmtAnls(r.anls)}</td>
-      <td class="num">${fmtNum(r.num_turns)}</td>
-      <td class="num">${fmtNum(r.vlm_calls)}</td>
-      <td class="num">${fmtNum(r.wall_clock_s, 0)}</td>
-      <td class="mono">${esc(r.termination)}</td>
+    k ? `<th class="sortable" data-k="${k}">${lab}${s === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`
+      : `<th>${lab}</th>`).join("");
+
+  const body = groups.map((g) => {
+    const open = triageState.expanded.has(g.question_id);
+    const grow = `<tr class="grp" data-q="${esc(g.question_id)}">
+      <td class="caret">${open ? "▾" : "▸"}</td>
+      <td>${esc(g.category)}</td>
+      <td><div class="mono">${esc(g.question_id)}</div>
+          <div style="color:var(--muted);font-size:12px">${esc((g.question || "").slice(0, 90))}</div></td>
+      <td>${groupBadge(g)}</td>
+      <td class="num">${fmtAnls(g.meanAnls)}</td>
+      <td class="num">${fmtAnls(g.maxAnls)}</td>
+      <td class="num">${fmtNum(g.meanTurns, 1)}</td>
+      <td class="num">${fmtNum(g.meanLooks, 1)}</td>
+      <td class="num">${fmtNum(g.meanWall, 0)}</td>
+      <td class="num">${g.n}</td>
     </tr>`;
+    if (!open) return grow;
+    const subs = g.samples.map((r) => {
+      const sidx = r.sample_idx ?? 0;
+      const href = `#/run/${encodeURIComponent(run)}/r/${encodeURIComponent(r.doc_id)}/${encodeURIComponent(r.question_id)}/${sidx}`;
+      return `<tr class="samp" onclick="location.hash='${href}'">
+        <td></td><td></td>
+        <td class="mono samp-q">↳ sample #${sidx} · ${esc(r.termination ?? "")}</td>
+        <td>${correctBadge(r.is_correct, r.anls)}</td>
+        <td class="num">${fmtAnls(r.anls)}</td>
+        <td class="num"></td>
+        <td class="num">${fmtNum(r.num_turns)}</td>
+        <td class="num">${fmtNum(r.vlm_calls)}</td>
+        <td class="num">${fmtNum(r.wall_clock_s, 0)}</td>
+        <td class="num"></td>
+      </tr>`;
+    }).join("");
+    return grow + subs;
   }).join("");
 
+  const fbtn = (f, lab) =>
+    `<button class="btn ${triageState.filter === f ? "active" : ""}" data-f="${f}">${lab}</button>`;
   app.innerHTML = `
-    <h2>${esc(run)} <span class="count">· ${fmtAnls(nCorrect / triageRows.length)} · ${nCorrect}/${triageRows.length} correct</span></h2>
+    <h2>${esc(run)} <span class="count">· sample acc ${fmtAnls(sampleCorrect / nSamples)}</span></h2>
+    <div class="meta-strip" style="margin-bottom:12px">
+      <span class="pill"><b>${nDocs}</b> docs</span>
+      <span class="pill"><b>${nQuestions}</b> questions</span>
+      <span class="pill"><b>${nSamples}</b> samples</span>
+      <span class="pill">solved <b>${nSolved}</b>/${nQuestions} (${fmtAnls(nSolved / nQuestions)})</span>
+      <span class="pill">sample-correct ${sampleCorrect}/${nSamples}</span>
+    </div>
     <div class="toolbar">
       <input type="text" id="q" placeholder="filter question / id / answer…" value="${esc(triageState.q)}" />
-      <button class="btn ${triageState.filter === "all" ? "active" : ""}" data-f="all">all (${triageRows.length})</button>
-      <button class="btn ${triageState.filter === "correct" ? "active" : ""}" data-f="correct">correct (${nCorrect})</button>
-      <button class="btn ${triageState.filter === "wrong" ? "active" : ""}" data-f="wrong">wrong (${nWrong})</button>
-      <button class="btn ${triageState.filter === "partial" ? "active" : ""}" data-f="partial">partial anls (${nPartial})</button>
+      ${fbtn("all", `all (${nQuestions})`)}
+      ${fbtn("solved", `solved (${nSolved})`)}
+      ${fbtn("unsolved", `unsolved (${nUnsolved})`)}
+      ${fbtn("mixed", `mixed (${nMixed})`)}
+      <span class="spacer"></span>
+      <button class="btn" id="expand-all">${triageState.expanded.size ? "collapse all" : "expand all"}</button>
     </div>
-    <table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="8" class="empty">none</td></tr>`}</tbody></table>`;
+    <table class="grouped"><thead><tr>${head}</tr></thead>
+      <tbody>${body || `<tr><td colspan="10" class="empty">none</td></tr>`}</tbody></table>`;
 
   $("q").oninput = (e) => { triageState.q = e.target.value; renderTriage(run); };
   app.querySelectorAll("[data-f]").forEach((b) =>
     (b.onclick = () => { triageState.filter = b.dataset.f; renderTriage(run); }));
+  $("expand-all").onclick = () => {
+    if (triageState.expanded.size) triageState.expanded.clear();
+    else groups.forEach((g) => triageState.expanded.add(g.question_id));
+    renderTriage(run);
+  };
+  app.querySelectorAll("tr.grp").forEach((tr) =>
+    (tr.onclick = () => {
+      const q = tr.dataset.q;
+      if (triageState.expanded.has(q)) triageState.expanded.delete(q);
+      else triageState.expanded.add(q);
+      renderTriage(run);
+    }));
   app.querySelectorAll("th[data-k]").forEach((th) =>
     (th.onclick = () => {
       const k = th.dataset.k;
       if (triageState.sort === k) triageState.dir *= -1;
-      else { triageState.sort = k; triageState.dir = (k === "anls" || k === "wall_clock_s" || k === "num_turns") ? -1 : 1; }
+      else { triageState.sort = k; triageState.dir = (k === "category") ? 1 : -1; }
       renderTriage(run);
     }));
 }
