@@ -128,9 +128,13 @@ semantics with deploy. Consequences:
   off writes rationale between blocks) is ignored — only complete fenced blocks run.
 
 ## Environment & infra fixes (REQUIRED — silent failures otherwise)
-**Venv:** `~/repos/docvqa-verl-rl/.venv-rl2` (gitignored). The ONLY env with a Qwen3.5-capable
-vLLM. Versions: **torch 2.10.0+cu128, vLLM 0.17.0, transformers 5.9.0, numpy 2.4.6,
-cupy 14.1.1**. (verl pins vLLM ≤0.12 which predates Qwen3.5 — we install around the pin.)
+**Venv: use `.venv-rl2`** — real path **`/home/baris/repos/docvqa-verl/.venv-rl2`**
+(gitignored; the rl worktree only *symlinks* to it, so cleaning up the rl worktree does NOT
+delete it). The ONLY Qwen3.5-capable env, for BOTH generation/eval and SFT. Versions:
+**torch 2.10.0+cu128, vLLM 0.17.0, transformers 5.9.0, numpy 2.4.6, cupy 14.1.1**. (verl
+pins vLLM ≤0.12 which predates Qwen3.5 — we install around the pin.) The GDN-LoRA cudagraph
+patch (below) is applied *inside this venv*. The repo's other venvs — `.venv` (pre-Qwen3.5
+verl env) and `.venv-rl` (earlier attempt) — are NOT Qwen3.5-capable; don't use them.
 - **cupy/numpy ABI:** the `nccl` checkpoint_engine imports cupy; cupy must match numpy's major
   (cupy 14.1 ↔ numpy 2.x). A numpy-2-built cupy on numpy-1.x fails silently
   (`numpy.core.multiarray failed to import` → "Checkpoint engine nccl not registered").
