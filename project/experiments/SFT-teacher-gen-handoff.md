@@ -16,11 +16,32 @@ session's learnings (VLM throughput, RL, scaffold parity). Work happens on branc
   trajectories are archived (do NOT mix with concat-era data) at
   `~/repos/docvqa-verl-rl/outputs/runs/teacher-gen-pool-parsefirst-archived/`.
 
-## Servers currently UP (reuse them — expensive to restart)
-- `:8932` — **27B teacher-AGENT**, DP2 on GPUs 0,1 (tmux `teacher-gen` in the rl worktree).
-- `:8927` — **27B VLM** (perception), DP2 on GPUs 2,3.
-- `:8928` — **27B VLM**, remote box (3 GPUs). Reached via SSH tunnel on localhost:8928.
-- Perception uses a **load-balanced pool** of `:8927`+`:8928` (see VLM learnings).
+## GPU layout & servers (updated 2026-06-13 — all 4 local GPUs to the AGENT)
+The 27B AGENT generation is the bottleneck (long multi-turn sequences), so **all 4 local
+GPUs run the agent (DP4)** and **perception uses the remote VLM only**. Perception is fast
+(prefill-bound, ~6s/call) and the remote DP3 carries it alone.
+
+- `:8932` — **27B teacher-AGENT**, **DP4 on local GPUs 0,1,2,3**, CUDA graphs ON (no
+  `--enforce-eager` → faster decode; capture works since the base teacher has no LoRA).
+  Runs in **tmux session `teacher-agent`, window `agent27b-dp4`** (log
+  `outputs/serve_teacher27b_dp4.log` in the rl worktree). Exact launch command:
+  ```bash
+  CUDA_VISIBLE_DEVICES=0,1,2,3 /home/baris/repos/prime-rl/.venv/bin/vllm serve \
+    Qwen/Qwen3.5-27B --port 8932 --data-parallel-size 4 --dtype bfloat16 \
+    --max-model-len 40960 --gpu-memory-utilization 0.90 --max-num-seqs 32
+  ```
+  (If long-sequence KV preempts heavily, lower `--concurrency` on the eval.py side, or
+  drop `--max-model-len`. If CUDA-graph capture ever errors, add `--enforce-eager`.)
+- `:8928` — **27B VLM** (perception), remote box (3 GPUs), reached via SSH tunnel on
+  localhost:8928. This is the ONLY perception endpoint now — `--vlm-base-url http://localhost:8928`.
+- (Local VLM `:8927` was retired to free GPUs 2,3 for the agent. To bring perception back
+  on-box if the remote is unavailable, serve a local VLM and use the pool spec
+  `'http://localhost:8927@2|http://localhost:8928@3'` — see VLM learnings.)
+
+**Resumable:** generation is resumable at per-question granularity — `eval.py --resume`
+on the same `--run-dir` skips any question already having ≥n streamed samples and runs
+only the rest; the final `results.json` still covers all questions. So you can stop/restart
+freely (e.g. after reconfiguring GPUs) without losing completed work.
 
 ## Resume generation (the long pole — hours)
 Pool file (405 prompts, 38% multi-page incl. 45 docs ≥11pages) is at
@@ -30,12 +51,12 @@ physical dir; the rl worktree symlinks to it). Rebuild with
 (also present here).
 
 ```bash
-# from this repo, with the RL venv active (see Environment):
-POOL='http://localhost:8927@2|http://localhost:8928@3'   # weighted least-loaded pool
+# from this repo, with the RL venv active (see Environment).
+# Agent = DP4 on local GPUs (:8932); perception = remote VLM only (:8928).
 python docvqa/scripts/eval.py \
   --questions data/pool/teacher_gen_pool.json \
   --base-url http://localhost:8932/v1 --model Qwen/Qwen3.5-27B \
-  --vlm-base-url "$POOL" --vlm-model Qwen/Qwen3.5-27B \
+  --vlm-base-url http://localhost:8928 --vlm-model Qwen/Qwen3.5-27B \
   --concurrency 24 --n 8 --temperature 0.6 --top-p 0.95 --top-k 20 \
   --no-thinking --rollout-timeout 1200 \
   --run-dir outputs/runs/teacher-gen-pool --resume
