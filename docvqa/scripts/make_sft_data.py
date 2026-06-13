@@ -17,31 +17,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
-
-# Match a complete ```python ... ``` fenced block (first one only via search).
-_FIRST_PY_FENCE = re.compile(r"```python\b.*?```", re.S)
-
-
-def _truncate_to_first_fence(text: str) -> str:
-    """Keep reasoning + the FIRST complete ```python``` block; drop any tail.
-
-    The CodeAct turn ends at the code fence — the observation arrives as the next
-    user turn. The model sometimes role-plays a *second* fence (a hallucinated next
-    action the scaffold never executes, since parse_first_fence runs only fence 1;
-    often preceded by a stray ``</think>``). Training on that tail teaches the 4B to
-    emit multi-block turns that mismatch deploy. Truncating at the end of the first
-    fence yields clean single-block 'reason -> one fence -> stop' supervision. Turns
-    with no python fence (rare terminal/SUBMIT prose) are returned unchanged."""
-    m = _FIRST_PY_FENCE.search(text)
-    if not m:
-        return text
-    return text[: m.end()]
 
 
 def _approx_tokens(messages: list[dict], tokenizer) -> int:
@@ -58,11 +38,14 @@ def _approx_tokens(messages: list[dict], tokenizer) -> int:
 
 
 def filter_and_project(rows: list[dict], max_per_question: int | None,
-                       max_tokens: int | None = None, tokenizer=None,
-                       first_fence: bool = True) -> list[dict]:
+                       max_tokens: int | None = None, tokenizer=None) -> list[dict]:
+    # Assistant turns are kept VERBATIM (incl. multi-fence ones): the deployed
+    # codeact_chat scaffold concatenates and runs every fenced block, so multi-fence
+    # turns are valid actions, not contamination. The model is trained to emit what
+    # it should emit; the scaffold does the parsing at inference (see agent_loop
+    # _extract_code_concat / concat_fences). No first-fence truncation.
     by_q: dict[str, list[dict]] = defaultdict(list)
     dropped_long = 0
-    multi_fence_cleaned = 0
     for r in rows:
         if r.get("anls") != 1.0:
             continue
@@ -71,23 +54,10 @@ def filter_and_project(rows: list[dict], max_per_question: int | None,
         msgs = r.get("messages") or []
         if not msgs or not any(m.get("role") == "assistant" for m in msgs):
             continue
-        if first_fence:
-            # Single-block-ify each assistant turn (drop hallucinated trailing fences).
-            new_msgs = []
-            for m in msgs:
-                if m.get("role") == "assistant":
-                    c = m.get("content") or ""
-                    t = _truncate_to_first_fence(c)
-                    if t != c:
-                        multi_fence_cleaned += 1
-                    m = {**m, "content": t}
-                new_msgs.append(m)
-            msgs = new_msgs
         if max_tokens is not None and tokenizer is not None:
             if _approx_tokens(msgs, tokenizer) > max_tokens:
                 dropped_long += 1
                 continue
-        r = {**r, "messages": msgs}
         by_q[r.get("question_id", r.get("record_id", ""))].append(r)
 
     kept: list[dict] = []
@@ -95,9 +65,6 @@ def filter_and_project(rows: list[dict], max_per_question: int | None,
         chosen = rs if max_per_question is None else rs[:max_per_question]
         for r in chosen:
             kept.append({"messages": r["messages"]})
-    if first_fence:
-        print(f"[first-fence] truncated {multi_fence_cleaned} multi-fence assistant turns",
-              file=sys.stderr)
     if max_tokens is not None:
         print(f"[max-tokens={max_tokens}] dropped {dropped_long} over-length "
               f"trajectories", file=sys.stderr)
@@ -141,12 +108,6 @@ def main() -> None:
                     help="Drop trajectories whose approx token length exceeds this "
                          "(SDPA can OOM on very long seqs). Loads the tokenizer.")
     ap.add_argument("--tokenizer", default="Qwen/Qwen3.5-4B")
-    ap.add_argument("--no-first-fence", dest="first_fence", action="store_false",
-                    help="Disable truncating assistant turns to their first ```python``` "
-                         "block. Default ON: drops hallucinated trailing fences so SFT "
-                         "data is single-block, matching the scaffold's parse_first_fence "
-                         "execution and the deploy format.")
-    ap.set_defaults(first_fence=True)
     args = ap.parse_args()
 
     tokenizer = None
@@ -156,8 +117,7 @@ def main() -> None:
 
     rows = _read_jsonl(Path(args.inp))
     kept = filter_and_project(rows, args.max_per_question,
-                              max_tokens=args.max_tokens, tokenizer=tokenizer,
-                              first_fence=args.first_fence)
+                              max_tokens=args.max_tokens, tokenizer=tokenizer)
     write_parquet(kept, Path(args.out))
     print(f"kept {len(kept)} trajectories from {len(rows)} rollouts -> {args.out}",
           file=sys.stderr)
