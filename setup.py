@@ -47,7 +47,7 @@ install_requires = [
 TEST_REQUIRES = ["pytest", "pre-commit", "py-spy", "pytest-asyncio", "pytest-rerunfailures"]
 PRIME_REQUIRES = ["pyext"]
 GEO_REQUIRES = ["mathruler", "torchvision", "qwen_vl_utils"]
-GPU_REQUIRES = ["liger-kernel", "flash-attn"]
+GPU_REQUIRES = ["liger-kernel", "flash-attn", "flash-linear-attention", "causal-conv1d"]
 MATH_REQUIRES = ["math-verify"]  # Add math-verify as an optional dependency
 VLLM_REQUIRES = ["tensordict>=0.8.0,<=0.10.0,!=0.9.0", "vllm>=0.8.5,<=0.12.0"]
 TRTLLM_REQUIRES = ["tensorrt-llm>=1.2.0rc6"]
