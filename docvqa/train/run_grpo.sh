@@ -26,7 +26,7 @@
 # (0.6/0.95/20 = configs/lm/*.yaml in ~/repos/docvqa) so any test_freq eval measures the
 # policy as deployed.
 #
-# Run with the RL venv active (.venv-rl2 — the only env with a Qwen3.5-capable vllm 0.17).
+# Run with the RL venv active (.venv — the only env with a Qwen3.5-capable vllm 0.17).
 # Requires the 27B VLM up at :8927; pause any mmlb/pool collection first (shares the 27B).
 # Read CLAUDE.md RL-training-practices BEFORE scaling: trainer/rollout PRECISION MATCHING is
 # the dominant silent RL failure — verify it. Full async writeup: RL-async-findings.md.
@@ -34,7 +34,7 @@ set -xeuo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_DIR"
-source .venv-rl2/bin/activate
+source .venv/bin/activate
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1}
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$REPO_DIR/outputs/hf_datasets_cache}"
@@ -84,7 +84,7 @@ ROLLOUT_GPU_MEM=${ROLLOUT_GPU_MEM:-0.25}
 # CUDA graphs (enforce_eager=False) are a ~3.8x per-stream decode speedup for this GDN-hybrid
 # model (profiled 15.8 -> 59.9 tok/s; rollout tail 509s -> 212s) and need TWO companion fixes:
 # (1) the vllm GDN-LoRA capture patch (patches/vllm-0.17-gdn-lora-cudagraph.patch.md, applied to
-# .venv-rl2) — without it dummy-LoRA warmup dies with IndexError (vllm#36372); (2) max_num_seqs
+# .venv) — without it dummy-LoRA warmup dies with IndexError (vllm#36372); (2) max_num_seqs
 # capped to actual concurrency (>= TRAIN_BATCH_SIZE*ROLLOUT_N) so capture batches never exceed
 # the GDN conv-state cache lines at our low gpu_memory_utilization (assert num_cache_lines >=
 # batch). Set ENFORCE_EAGER=True to fall back if either breaks after an env change.

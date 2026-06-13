@@ -26,7 +26,7 @@ GPUs run the agent (DP4)** and **perception uses the remote VLM only**. Percepti
   Runs in **tmux session `teacher-agent`, window `agent27b-dp4`** (log
   `outputs/serve_teacher27b_dp4.log` in the rl worktree). Exact launch command:
   ```bash
-  CUDA_VISIBLE_DEVICES=0,1,2,3 /home/baris/repos/prime-rl/.venv/bin/vllm serve \
+  CUDA_VISIBLE_DEVICES=0,1,2,3 /home/baris/repos/docvqa-verl/.venv/bin/vllm serve \
     Qwen/Qwen3.5-27B --port 8932 --data-parallel-size 4 --dtype bfloat16 \
     --max-model-len 40960 --gpu-memory-utilization 0.90 --max-num-seqs 32
   ```
@@ -128,18 +128,20 @@ semantics with deploy. Consequences:
   off writes rationale between blocks) is ignored — only complete fenced blocks run.
 
 ## Environment & infra fixes (REQUIRED — silent failures otherwise)
-**Venv: use `.venv-rl2`** — real path **`/home/baris/repos/docvqa-verl/.venv-rl2`**
-(gitignored; the rl worktree only *symlinks* to it, so cleaning up the rl worktree does NOT
-delete it). The ONLY Qwen3.5-capable env, for BOTH generation/eval and SFT. Versions:
-**torch 2.10.0+cu128, vLLM 0.17.0, transformers 5.9.0, numpy 2.4.6, cupy 14.1.1**. (verl
-pins vLLM ≤0.12 which predates Qwen3.5 — we install around the pin.) The GDN-LoRA cudagraph
-patch (below) is applied *inside this venv*. The repo's other venvs — `.venv` (pre-Qwen3.5
-verl env) and `.venv-rl` (earlier attempt) — are NOT Qwen3.5-capable; don't use them.
+**Venv: `.venv`** at **`/home/baris/repos/docvqa-verl/.venv`** (gitignored) is now the single
+canonical env — for serving (vllm), generation/eval, AND SFT. It was promoted from the former
+`.venv-rl2` (2026-06-13: stale `.venv`/`.venv-rl` removed, `.venv-rl2` renamed to `.venv` with
+its internal paths fixed; the rl worktree symlinks `.venv` → here, so worktree cleanup won't
+delete it). Versions: **torch 2.10.0+cu128, vLLM 0.17.0, transformers 5.9.0, numpy 2.4.6,
+cupy 14.1.1** (verl pins vLLM ≤0.12 which predates Qwen3.5 — installed around the pin). The
+GDN-LoRA cudagraph patch (below) is applied *inside this venv*. Activate: `source .venv/bin/activate`.
+NOTE: the currently-running DP4 agent was started with prime-rl's vllm 0.17 (equivalent); future
+serves should use `.venv/bin/vllm` (per the launch command above).
 - **cupy/numpy ABI:** the `nccl` checkpoint_engine imports cupy; cupy must match numpy's major
   (cupy 14.1 ↔ numpy 2.x). A numpy-2-built cupy on numpy-1.x fails silently
   (`numpy.core.multiarray failed to import` → "Checkpoint engine nccl not registered").
 - **vLLM patch (required for CUDA graphs + LoRA on Qwen3.5):**
-  `patches/vllm-0.17-gdn-lora-cudagraph.patch.md` — applied to `.venv-rl2`. Without it,
+  `patches/vllm-0.17-gdn-lora-cudagraph.patch.md` — applied to `.venv`. Without it,
   cudagraph capture dies (`IndexError` in dummy-LoRA, vllm#36372). Exclude GDN modules
   (`in_proj_qkvz/in_proj_ba/conv1d/out_proj`) from LoRA wrapping.
 - **`rollout.load_format=safetensors`** (NOT dummy) for Qwen3.5 — GDN/linear-attn weights
