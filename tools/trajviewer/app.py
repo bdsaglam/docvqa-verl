@@ -77,7 +77,12 @@ def _iter_rollouts(run_dir: Path):
 
 
 def _summarize_rollout(d: dict) -> dict:
-    """Triage-row fields only (no heavy messages/token-ids payload)."""
+    """Triage-row fields only (no heavy messages/token-ids payload). Token
+    lengths are cheap here (the arrays are already parsed) and are the key
+    distribution for SFT sequence-length budgeting."""
+    pid, rid = d.get("prompt_ids"), d.get("response_ids")
+    plen = len(pid) if isinstance(pid, list) else None
+    rlen = len(rid) if isinstance(rid, list) else None
     return {
         "doc_id": d.get("doc_id"),
         "category": d.get("category"),
@@ -93,6 +98,10 @@ def _summarize_rollout(d: dict) -> dict:
         "num_turns": d.get("num_turns"),
         "vlm_calls": d.get("vlm_calls"),
         "wall_clock_s": d.get("wall_clock_s"),
+        "prompt_tokens": plen,
+        "response_tokens": rlen,
+        "num_tokens": (plen + rlen) if (plen is not None and rlen is not None) else None,
+        "num_pages": None,  # filled in by the rollouts endpoint (per-doc join)
     }
 
 
@@ -139,10 +148,52 @@ def run_detail(run: str):
     }
 
 
+@lru_cache(maxsize=64)
+def _run_doc_pagecounts(questions_path: str, _mtime: float) -> dict:
+    """doc_id -> num_pages, from each doc's metadata.json (fallback: count
+    page_*.png). Cached per questions file; _mtime busts on change."""
+    data = _read_json(Path(questions_path)) or []
+    records = data if isinstance(data, list) else list(data.values())
+    out = {}
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        did, dd = r.get("doc_id"), r.get("doc_dir")
+        if not did or did in out or not dd:
+            continue
+        md = _read_json(Path(dd) / "metadata.json")
+        if md and isinstance(md.get("num_pages"), int):
+            out[did] = md["num_pages"]
+        else:
+            pdir = Path(dd) / "pages"
+            if pdir.is_dir():
+                out[did] = sum(1 for _ in pdir.glob("page_*.png"))
+    return out
+
+
+def _run_pagecount_map(run_dir: Path) -> dict:
+    cfg = _read_json(run_dir / "config.json") or {}
+    qpath = cfg.get("questions")
+    if not qpath:
+        return {}
+    qp = Path(qpath)
+    if not qp.is_absolute():
+        qp = REPO_ROOT / qp
+    if not qp.is_file():
+        return {}
+    return _run_doc_pagecounts(str(qp), qp.stat().st_mtime)
+
+
 @app.get("/api/runs/{run}/rollouts")
 def run_rollouts(run: str):
     d = _safe_run_dir(run)
-    rows = [_summarize_rollout(r) for _, r in _iter_rollouts(d)]
+    pages = _run_pagecount_map(d)
+    rows = []
+    for doc_id, r in _iter_rollouts(d):
+        row = _summarize_rollout(r)
+        if row.get("num_pages") is None:
+            row["num_pages"] = pages.get(doc_id)
+        rows.append(row)
     return {"run": run, "rollouts": rows}
 
 

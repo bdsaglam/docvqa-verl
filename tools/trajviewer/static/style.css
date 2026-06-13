@@ -162,6 +162,23 @@ pre.out { background: #0b0d12; border: 1px solid var(--border); border-radius: 8
 .pages-grid img { width: 100%; border: 1px solid var(--border); border-radius: 6px; background:#fff; }
 .pages-grid figcaption { text-align: center; color: var(--muted); font-size: 11px; }
 
+/* stats page */
+h3.sec { margin: 22px 0 10px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.chart-card { margin-bottom: 0; padding: 12px 14px; }
+.chart-card.wide { grid-column: 1 / -1; }
+.chart-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+svg.hist { display: block; background: #0b0d12; border: 1px solid var(--border); border-radius: 6px; }
+svg.hist rect { transition: opacity .1s; }
+svg.hist rect:hover { opacity: .7; }
+.chart-stats { color: var(--muted); font-size: 11.5px; font-family: var(--mono); margin-top: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+.legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.legend .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.vbar-wrap { overflow-x: auto; padding-top: 4px; }
+svg.vbars { display: block; background: #0b0d12; border: 1px solid var(--border); border-radius: 6px; }
+svg.vbars rect { transition: opacity .1s; } svg.vbars rect:hover { opacity: .7; }
+
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex;
   align-items: center; justify-content: center; z-index: 100; cursor: zoom-out; padding: 20px; }
 .lightbox img { max-width: 95vw; max-height: 95vh; background:#fff; border-radius: 4px; }

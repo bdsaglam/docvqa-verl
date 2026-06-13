@@ -163,6 +163,7 @@ function route() {
   const parts = h.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts.length === 0) return viewRuns();
   if (parts[0] === "run" && parts.length === 2) return viewTriage(parts[1]);
+  if (parts[0] === "run" && parts[1] && parts[2] === "stats") return viewStats(parts[1]);
   if (parts[0] === "run" && parts[1] && parts[2] === "r")
     return viewReader(parts[1], parts[3], parts[4], +parts[5]);
   if (parts[0] === "compare")
@@ -345,7 +346,8 @@ function renderTriage(run) {
   const fbtn = (f, lab) =>
     `<button class="btn ${triageState.filter === f ? "active" : ""}" data-f="${f}">${lab}</button>`;
   app.innerHTML = `
-    <h2>${esc(run)} <span class="count">· sample acc ${fmtAnls(sampleCorrect / nSamples)}</span></h2>
+    <h2>${esc(run)} <span class="count">· sample acc ${fmtAnls(sampleCorrect / nSamples)}</span>
+        <a class="link" style="font-size:13px;margin-left:10px" onclick="location.hash='#/run/${encodeURIComponent(run)}/stats'">📊 stats →</a></h2>
     <div class="meta-strip" style="margin-bottom:12px">
       <span class="pill"><b>${nDocs}</b> docs</span>
       <span class="pill"><b>${nQuestions}</b> questions</span>
@@ -492,4 +494,224 @@ async function viewCompare(runA, runB, doc, qid, sidx) {
   };
   app.innerHTML = `<h2>Compare · <span class="mono">${esc(qid)}</span></h2>
     <div class="cmp">${col(runA, a)}${col(runB, b)}</div>`;
+}
+
+// ----------------------------------------------------------------------- //
+// view: stats (distributions for rejection-sampling decisions)
+// ----------------------------------------------------------------------- //
+function pctile(sorted, p) {
+  if (!sorted.length) return null;
+  const i = Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)));
+  return sorted[i];
+}
+
+// stacked SVG histogram. series = [{label,color,values:[num]}]
+function svgHist(series, opts = {}) {
+  const all = series.flatMap((s) => s.values).filter((v) => v != null && isFinite(v));
+  if (!all.length) return `<div class="empty">no data</div>`;
+  let lo = opts.min != null ? opts.min : Math.min(...all);
+  let hi = opts.max != null ? opts.max : Math.max(...all);
+  if (hi <= lo) hi = lo + 1;
+  const nb = opts.bins || 24;
+  const bw = (hi - lo) / nb;
+  const counts = Array.from({ length: nb }, () => series.map(() => 0));
+  series.forEach((s, si) => s.values.forEach((v) => {
+    if (v == null || !isFinite(v)) return;
+    let b = Math.floor((v - lo) / bw);
+    if (b < 0) b = 0; if (b >= nb) b = nb - 1;
+    counts[b][si]++;
+  }));
+  const maxStack = Math.max(1, ...counts.map((c) => c.reduce((a, b) => a + b, 0)));
+  const W = 340, H = 132, padB = 16;
+  const plotH = H - padB, barW = W / nb;
+  const fmt = opts.fmt || ((v) => (Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v)));
+  let rects = "";
+  counts.forEach((c, bi) => {
+    let y = plotH;
+    const total = c.reduce((a, b) => a + b, 0);
+    const lab = `${fmt(lo + bi * bw)}–${fmt(lo + (bi + 1) * bw)}: ${total}`;
+    c.forEach((cnt, si) => {
+      if (!cnt) return;
+      const h = cnt / maxStack * plotH;
+      y -= h;
+      rects += `<rect x="${(bi * barW).toFixed(1)}" y="${y.toFixed(1)}" width="${(barW - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${series[si].color}"><title>${esc(lab)} (${esc(series[si].label)} ${cnt})</title></rect>`;
+    });
+  });
+  const tick = (v, x, anchor) =>
+    `<text x="${x}" y="${H - 4}" fill="#8b94a3" font-size="10" text-anchor="${anchor}">${fmt(v)}</text>`;
+  const axis = tick(lo, 1, "start") + tick((lo + hi) / 2, W / 2, "middle") + tick(hi, W - 1, "end");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" class="hist">${rects}${axis}</svg>`;
+}
+
+function statsLine(values) {
+  const v = values.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return "";
+  const mean = v.reduce((a, b) => a + b, 0) / v.length;
+  return `<div class="chart-stats">n=${v.length} · min ${fmtCompact(v[0])} · med ${fmtCompact(pctile(v, 0.5))}
+    · mean ${fmtCompact(mean)} · p90 ${fmtCompact(pctile(v, 0.9))} · max ${fmtCompact(v[v.length - 1])}</div>`;
+}
+function fmtCompact(x) {
+  if (x == null) return "–";
+  if (Math.abs(x) >= 1000) return (x / 1000).toFixed(1) + "k";
+  return Number.isInteger(x) ? String(x) : x.toFixed(2);
+}
+
+function legend(series) {
+  return `<div class="legend">` + series.map((s) => {
+    const n = s.count != null ? s.count
+      : (s.values ? s.values.filter((v) => v != null && isFinite(v)).length : null);
+    return `<span class="lg"><span class="sw" style="background:${s.color}"></span>${esc(s.label)}${n != null ? ` (${n})` : ""}</span>`;
+  }).join("") + `</div>`;
+}
+
+function chartCard(title, series, opts = {}) {
+  const allVals = series.flatMap((s) => s.values);
+  return `<div class="card chart-card">
+    <div class="chart-title">${esc(title)}</div>
+    ${legend(series)}
+    ${svgHist(series, opts)}
+    ${statsLine(allVals)}
+  </div>`;
+}
+
+// vertical bar chart. items = [[label, value], ...]
+function catBarCard(title, items, color) {
+  if (!items.length)
+    return `<div class="card chart-card wide"><div class="chart-title">${esc(title)}</div><div class="empty">no data</div></div>`;
+  const maxV = Math.max(1, ...items.map(([, v]) => v));
+  const n = items.length;
+  // steeply-rotated labels extend down-left from each bar; reserve enough left
+  // and bottom room for the longest one so it isn't clipped.
+  const ANGLE = 58; // degrees from horizontal (near-vertical)
+  const rad = ANGLE * Math.PI / 180, cosA = Math.cos(rad), sinA = Math.sin(rad);
+  const maxChars = Math.max(...items.map(([name]) => String(name).length));
+  const labelPx = maxChars * 6.2;
+  const barW = 72, gap = 34, padT = 18, plotH = 200;
+  const padL = Math.max(14, Math.round(labelPx * cosA) - barW / 2 + 8);
+  const labelH = Math.round(labelPx * sinA) + 22;
+  const W = padL * 2 + n * barW + (n - 1) * gap;
+  const H = padT + plotH + labelH;
+  const baseY = padT + plotH;
+  let bars = "";
+  items.forEach(([name, v], i) => {
+    const x = padL + i * (barW + gap), cx = x + barW / 2;
+    const h = v / maxV * plotH, y = baseY - h;
+    bars += `<rect x="${x}" y="${y.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" fill="${color}" rx="2"><title>${esc(name)}: ${v}</title></rect>`;
+    bars += `<text x="${cx}" y="${(y - 4).toFixed(1)}" fill="#d7dce5" font-size="11" text-anchor="middle">${v}</text>`;
+    bars += `<text x="${cx}" y="${baseY + 12}" fill="#8b94a3" font-size="10.5" text-anchor="end" transform="rotate(-${ANGLE} ${cx} ${baseY + 12})">${esc(name)}</text>`;
+  });
+  bars += `<line x1="${padL}" y1="${baseY}" x2="${W - padL}" y2="${baseY}" stroke="#2a2f3a"/>`;
+  return `<div class="card chart-card wide"><div class="chart-title">${esc(title)}</div>
+    <div class="vbar-wrap"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="vbars">${bars}</svg></div></div>`;
+}
+
+const C_KEEP = "#4caf7d", C_DROP = "#e5736f", C_ALL = "#4caf7d", C_MIX = "#d9b04a", C_NONE = "#e5736f";
+
+const statsState = { subset: "all" }; // all | kept | dropped
+let statsRows = [], statsRun = "";
+
+async function viewStats(run) {
+  setCrumbs([{ label: "runs", hash: "/" },
+    { label: run, hash: "/run/" + encodeURIComponent(run) }, { label: "stats" }]);
+  app.innerHTML = `<div class="loading">Loading rollouts…</div>`;
+  const data = await getJSON(`/api/runs/${encodeURIComponent(run)}/rollouts`);
+  statsRows = data.rollouts;
+  statsRun = run;
+  statsState.subset = "all";
+  if (!statsRows.length) { app.innerHTML = `<div class="empty">No rollouts in ${esc(run)}.</div>`; return; }
+  renderStats();
+}
+
+function renderStats() {
+  const run = statsRun, sub = statsState.subset;
+  const totalCorrect = statsRows.filter((r) => r.is_correct === true).length;
+  const totalWrong = statsRows.length - totalCorrect;
+
+  // sample subset the figures describe
+  const rows = sub === "kept" ? statsRows.filter((r) => r.is_correct === true)
+    : sub === "dropped" ? statsRows.filter((r) => r.is_correct !== true)
+      : statsRows;
+  const groups = buildGroups(rows);
+  groups.forEach((g) => { g.num_pages = g.samples[0]?.num_pages ?? null; });
+
+  // build series — split by kept/dropped (or solve-status) only in "all" view;
+  // a chosen subset is a single homogeneous series.
+  let sampleSeries, qSeriesSel;
+  if (sub === "all") {
+    const correct = statsRows.filter((r) => r.is_correct === true);
+    const wrong = statsRows.filter((r) => r.is_correct !== true);
+    sampleSeries = (key) => [
+      { label: "kept (correct)", color: C_KEEP, values: correct.map((r) => r[key]) },
+      { label: "dropped", color: C_DROP, values: wrong.map((r) => r[key]) },
+    ];
+    const gAll = groups.filter((g) => g.allCorrect);
+    const gMix = groups.filter((g) => g.anyCorrect && !g.allCorrect);
+    const gNone = groups.filter((g) => !g.anyCorrect);
+    qSeriesSel = (fn) => [
+      { label: "all ✓", color: C_ALL, values: gAll.map(fn) },
+      { label: "mixed", color: C_MIX, values: gMix.map(fn) },
+      { label: "none", color: C_NONE, values: gNone.map(fn) },
+    ];
+  } else {
+    const col = sub === "kept" ? C_KEEP : C_DROP;
+    const lab = sub === "kept" ? "kept (correct)" : "dropped (incorrect)";
+    sampleSeries = (key) => [{ label: lab, color: col, values: rows.map((r) => r[key]) }];
+    qSeriesSel = (fn) => [{ label: lab, color: col, values: groups.map(fn) }];
+  }
+
+  // category distribution: plain per-category question counts for the current
+  // subset (solve status is already encoded by the subset button — no stacking).
+  // all categories in the run (so a category with 0 in the subset still shows
+  // as an empty bar), ordered by overall question count — stable across subsets
+  const fullByCat = {};
+  for (const g of buildGroups(statsRows)) { const c = g.category || "—"; fullByCat[c] = (fullByCat[c] || 0) + 1; }
+  const subByCat = {};
+  for (const g of groups) { const c = g.category || "—"; subByCat[c] = (subByCat[c] || 0) + 1; }
+  const catItems = Object.keys(fullByCat).sort((a, b) => fullByCat[b] - fullByCat[a]).map((c) => [c, subByCat[c] || 0]);
+  const catColor = sub === "kept" ? C_KEEP : sub === "dropped" ? C_DROP : "#6ea8fe";
+  const catCard = catBarCard(`questions per category${sub === "all" ? "" : " (" + sub + ")"}`, catItems, catColor);
+
+  const nDocs = new Set(rows.map((r) => r.doc_id)).size;
+  const sbtn = (k, lab) => `<button class="btn ${sub === k ? "active" : ""}" data-sub="${k}">${lab}</button>`;
+  const sHead = sub === "all" ? "Per-trajectory (sample) — kept vs dropped" : `Per-trajectory — ${sub} samples`;
+  const qHead = sub === "all" ? "Per-question — by solve status" : `Per-question — ${sub} subset`;
+  const spq = sub === "all" ? "samples per question" : `${sub} samples per question`;
+
+  app.innerHTML = `
+    <h2>${esc(run)} · distributions</h2>
+    <div class="toolbar">
+      <span class="count">subset for figures:</span>
+      ${sbtn("all", `all samples (${statsRows.length})`)}
+      ${sbtn("kept", `kept · correct (${totalCorrect})`)}
+      ${sbtn("dropped", `dropped · incorrect (${totalWrong})`)}
+      <span class="count">— kept = the trajectories you'd SFT on</span>
+    </div>
+    <div class="meta-strip" style="margin-bottom:14px">
+      <span class="pill"><b>${nDocs}</b> docs</span>
+      <span class="pill"><b>${groups.length}</b> questions</span>
+      <span class="pill"><b>${rows.length}</b> ${sub === "all" ? "samples" : sub + " samples"}</span>
+    </div>
+
+    <h3 class="sec">${sHead}</h3>
+    <div class="chart-grid">
+      ${chartCard("total tokens (prompt+response)", sampleSeries("num_tokens"))}
+      ${chartCard("response tokens (SFT target)", sampleSeries("response_tokens"))}
+      ${chartCard("# turns", sampleSeries("num_turns"), { bins: 16 })}
+      ${chartCard("# VLM looks", sampleSeries("vlm_calls"), { bins: 16 })}
+      ${chartCard("wall-clock (s)", sampleSeries("wall_clock_s"))}
+      ${chartCard("ANLS", sampleSeries("anls"), { min: 0, max: 1, bins: 20 })}
+    </div>
+
+    <h3 class="sec">${qHead}</h3>
+    <div class="chart-grid">
+      ${chartCard("# pages (document length)", qSeriesSel((g) => g.num_pages))}
+      ${chartCard(spq, qSeriesSel((g) => g.n), { bins: 12 })}
+      ${chartCard("best ANLS of question", qSeriesSel((g) => g.maxAnls), { min: 0, max: 1, bins: 20 })}
+    </div>
+
+    <h3 class="sec">Category</h3>
+    <div class="chart-grid">${catCard}</div>`;
+
+  app.querySelectorAll("[data-sub]").forEach((b) =>
+    (b.onclick = () => { statsState.subset = b.dataset.sub; renderStats(); }));
 }
