@@ -12,7 +12,7 @@ voice common in good papers; not heavy.
 - *Pillar A — agentic-harness evaluation* (from the `~/repos/docvqa` repo): a
   controlled comparison of 8 harness designs on DocVQA-2026 val (n=8, frozen
   Qwen3.5-27B VLM, no-think). Key facts: a code REPL + a depth-1 VLM perception
-  tool (active perception) are the two load-bearing mechanisms (~25 ANLS spread);
+  tool (active perception) are the two essential mechanisms (~25 ANLS spread);
   active visual perception beats OCR (rlm_ocr −25.5pp); harness ranking flips with
   reasoner scale; **append-only CodeAct ties context-managing RLM at 27B (39.5 vs
   39.4).**

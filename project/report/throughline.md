@@ -68,7 +68,7 @@ technical reader.
    27B VLM), the active-perception REPL scaffolds reach ~39 ANLS — clearing
    tool-based ReAct (~25) and no-REPL VLM agents (~20), and matching or exceeding
    the frontier frozen models above. The mechanism is isolated:
-   - the code REPL and the VLM perception tool are each load-bearing
+   - the code REPL and the VLM perception tool are each essential
      (dropping either collapses the score);
    - **cropping is the active ingredient behind the visual-density effect** —
      removing crop/zoom costs only −2.5 overall but −11.2 on engineering drawings
@@ -147,7 +147,7 @@ technical reader.
 - **CodeAct numbers = older implementation, re-run pending.** Every CodeAct cell
   (Gemma docs + the scale sweep) is the older CodeAct impl; the user will re-run
   them. Flag CodeAct numbers as provisional wherever used; lean on the clean RLM
-  number as the load-bearing active-perception result until the re-runs land.
+  number as the reference active-perception result until the re-runs land.
   The Qwen3.5-27B RLM≈CodeAct tie (§4) is similarly provisional on the CodeAct side.
 - **Decouple scope.** Pillar 1 carries NO ≤8B framing. The ≤8B tier, leaderboard
   context, and the 4B backbone belong to Pillar 2 only.

@@ -19,6 +19,15 @@
 > of this conversation or the project's history. Declarative, self-contained. No
 > paraphrase of our discussion, no dialectic, no meta framing ("two pillars",
 > "this section", "as we noted"), no first-person process narrative.
+>
+> **Banned words / style (hard rule):** NEVER use "load-bearing" or "delve into".
+> "Perceive–Reason–Code" is NOT a common term — it is only the NAME of the prior
+> competition entry; for the general agent type use "code-REPL agents" /
+> "active-perception scaffold". **OPD = future-work mention only** (no time to run
+> it). **Ablations are RLM-only and presented SEPARATELY from the solver
+> comparison** — Table 1 = distinct harness designs; Table 2 = RLM ablations
+> (one lever at a time). Ablations show a component/lever's impact, not a design
+> contrast.
 
 ## Working title (candidates) — active-perception framed
 - "Active Perception with Code: A Harness Evaluation of Active-Perception VLM Agents for
@@ -33,7 +42,7 @@
    no-REPL VLM agents (~20), and match or exceed much larger frozen models
    (Gemini-3-Pro 37.5, Gemini-3-Flash 33.75 on validation — low for their size).
 2. **The mechanism, isolated.** A code REPL and the VLM perception tool are
-   each load-bearing; the advantage concentrates on *visually dense* pages because
+   each essential; the advantage concentrates on *visually dense* pages because
    cropping recovers detail whole-page reads miss (no-crop −11.2 eng-draw /
    −17.5 poster); OCR-free visual perception is decisive (−25.5pp; eng-draw & maps → 0);
    the REPL converts reasoning capability into perception quality.
@@ -68,7 +77,28 @@
   (†, provisional, re-run pending). Table 1 + Table 3 4B/27B already updated; the
   rest stays provisional until re-run.
 - **Second-dataset generalization point (§3.6)** — pending 27B run.
-- **GRPO full 80Q n=4 curve (§5.3)** — pending RL.
+- **§5 Pillar-B section — REWRITE pending results** (per mining/pillarB-capture.md +
+  the new outline §5). The drafted `05-training-small-agent.md` is STALE: (a) lists
+  7 pool datasets, missing MMLongBench-Doc (8th); (b) headlines Phase-A 15.3→20.6
+  (+5.3) which is OLD-scaffold, non-comparable to corrected baseline 22.34 — Phase-B
+  full-val PENDING; (c) frames the data as "MMLongBench transfer" + "pool built-after-
+  SFT, not-yet-trained" — now the NEW approach IS rejection-sampling SFT/SeqKD on
+  codeact_chat-27B rollouts FROM the pool. Rewrite when Phase-B lands. Add pass@k +
+  the rejection-sampling figure (trajviewer /stats).
+- **§4.4 + §5.3 prose softening — TODO (page-count finding established).** Section
+  drafts still say runaway = "growing-prefix cost" / append-only context growth.
+  Decouple: runaway = capability×long-doc (effort length-flat, 27B unaffected);
+  §4.4 ceiling = theoretical only → makes "prefix preservation is free" stronger.
+- **pass@k** — emitted at n≥2; add column/figure once SFT/RL runs report it.
+  Reference base-4B = codeact_chat 4B/27B **22.3 → pass@8 55.0** (docvqa repo).
+- **Base-4B not yet evaluated on docvqa-verl (corrected pipeline).** `baseline-
+  cleanval-n4` (15.3, thinking-ON, 2026-06-09) and `base-4b-val-n4` (thinking-ON,
+  n=2, no results.json) are STALE/pre-correction — IGNORE. Need a corrected
+  base-4B eval (thinking-off, n≥4, pass@k) in this repo. ⚠️ The Pillar-B mining
+  (runaway 38.8% / r≈0.70 in mining/pillarB-results.md + the pageCount cuts) was
+  computed on those stale thinking-on base-4b dirs → RE-VERIFY once the corrected
+  base eval lands; treat the runaway magnitudes as provisional.
+- **GRPO: RL-train SFT-init AND untrained base (§5.4)** — pending RL (details from user).
 - **renderers prefix-invariant citation** — GitHub blog, not arXiv; resolve in bib pass.
 
 ## ⚠️ Cross-cutting issues / standing caveats (honesty-critical)
@@ -85,6 +115,9 @@
 - **ANLS threshold — RESOLVED: binary ANLS @ 0.9, both pillars** (verified
   `docvqa/metrics.py:142` threshold=0.9; `reward.py:4-6`). Numbers comparable;
   define once in setup.
+- **Report pass@k alongside ANLS** (user request) for baseline / SFT / RL models —
+  already emitted to `results.json` at n≥2; SFT+RL pipelines will report it going
+  forward. Add a pass@k column/figure to §5 results + state the protocol in §3.1/§5.1.
 - **Visual density, not page length.** The active-perception advantage tracks
   visual density (cropping-recoverable), NOT document length; "advantage grows
   with pages" is empirically false (it vanishes on 40+pg with a strong VLM) —
@@ -93,7 +126,7 @@
   families (Qwen3.5 + Gemma-4) at capable scale"; negative controls = Gemma-4-E4B
   and older Qwen3-8B. Not "size alone."
 - **CodeAct numbers = older impl, re-run pending** (user will re-run). Flag every
-  CodeAct cell provisional; lean on clean RLM as the load-bearing active-
+  CodeAct cell provisional; lean on clean RLM as the essential active-
   perception number; the Qwen3.5-27B RLM≈CodeAct tie (§4) is provisional on the
   CodeAct side until re-run.
 - **Frontier comparison = "matches or exceeds"** (not a hard beat); frame as
@@ -165,9 +198,9 @@
 - **3.4 Result — active perception dominates** (Table 1, 8-solver matrix + anchors).
   REPL family ~39 ≫ ReAct 25.16 ≫ direct/raw/official 18–22 ≫ OCR-only 13.91;
   matches/exceeds frontier. Three tiers separated by ≫ std. (CodeAct 39.53
-  provisional-older-impl; RLM 39.38 load-bearing.)
-- **3.5 Mechanism — what's load-bearing.**
-  - REPL + the VLM perception tool each load-bearing (drop either → collapses; Table 2).
+  provisional-older-impl; RLM 39.38 reference.)
+- **3.5 Mechanism — which components matter.**
+  - REPL + the VLM perception tool each essential (drop either → collapses; Table 2).
   - **Cropping = the visual-density lever:** no-crop −2.5 overall / −11.2 eng-draw
     / −17.5 poster; rvlm−react advantage by category (eng-draw ≈ +30 … science_paper
     ≈ +5). Density, not length.
@@ -211,30 +244,60 @@
   context → higher *potential* ceiling on long horizons, but a frozen model is
   off-distribution in a context-managing harness → parity, not RLM≫CodeAct.
   Training-unlockable (ContextCurator 2604.11462, FoldAct). Hedge: hypothesis,
-  magnitude unproven; ReSum = contrary (frozen compaction can help). Bridges to
-  Pillar 2's runaway cost (append-only context growth).
+  magnitude unproven; ReSum = contrary (frozen compaction can help). **CEILING
+  ARGUMENT IS THEORETICAL ONLY** — empirically the append-only context-growth cost
+  does NOT materialize at these doc lengths (page-count analysis: effort
+  length-flat ~12–16 turns, RLM no long-doc edge, 27B unaffected), which makes
+  "prefix preservation is free" STRONGER. Do NOT claim runaway = append-only growth
+  (it's capability×long-doc, §5.3). See mining/pageCount-{rlm-vs-codeact,per-solver}.md.
 
-# §5 Training a Small Agent (Pillar 2) · ~1.5pp · 🟠 **DEFERRED / LIGHT** (fill as results land)
-> Consolidates old methods/setup/results/discussion into one light section while
-> Pillar 2 is preliminary. Keep honest; build no committed training claim.
-- **5.1 What's trained + setup.** Qwen3.5-4B + LoRA all-linear, single GPU; VLM
-  frozen external; train==deploy scaffold. Backbone pivot (8B→4B). Eval protocol
-  per §3.1 (binary ANLS@0.9, thinking-OFF + same rationale), with Pillar-2
-  specifics: n=4, mini-29Q vs full-80Q, paired stats; baselines untrained-4B +
-  leaderboard ≤8B ~0.19 / 27B ~0.375. verl/FSDP/colocated-GRPO.
-- **5.2 Signals (design).** SeqKD (O(N) off-policy, cold-start; MMLongBench-Doc
-  transfer 2407.01523, leakage-free), GRPO (O(1) on-policy ANLS reward + shaping),
-  OPD (O(N) on-policy per-token KL to 27B teacher; GKD 2306.13649), summed-advantage.
-  The training-data pool (method-agnostic substrate, built-after-SFT, NOT yet
-  trained on): DocVQA/InfographicVQA/ChartQA/MapQA/MP-DocVQA/TAT-DQA/SlideVQA
-  (cite each); weighted sampler, leakage-safe.
-- **5.3 Preliminary results + the structural ceiling.** SFT = modest, fragile
-  lift on 4B (15.3→20.6, +5.3, p≈0.04; mostly infographics/slide), reverses on 8B
-  (5.9→4.4); memorized in-domain only ties base. RL = smoke-test (loop runs
-  coherently; not yet a result). **Long-document runaway = the ceiling that bounds
-  every method:** 38.8% of base-4B rollouts hit a budget cap without submitting;
-  runaway vs num_pages r≈0.70 (1–5pg 23% → 50+pg 59% → 181pg 100%); accuracy
-  collapses in lockstep — the growing-prefix cost. [from mining/pillarB-results.md]
+# §5 Training a Small Agent (Pillar 2) · ~1.5pp · 🟠 IN-PROGRESS (results PENDING; fill as they land)
+> Full detail in mining/pillarB-capture.md. Honest; no committed training claim
+> until Phase-B full-val lands. Pipeline/numbers being finalized by user.
+- **Approach = rejection sampling → train.** No DocVQA train set with agent
+  reference solutions exists → generate rollouts with the **CodeAct (codeact_chat)
+  scaffold + 27B/27B teacher** on the data pool, keep the **correct** rollouts
+  (rejection sampling), PEFT/LoRA-train the **4B student** on them. **TERMINOLOGY
+  (verified from code = plain masked cross-entropy, no KL/logit loss):** call it
+  "**SFT on rejection-sampled teacher trajectories — a form of sequence-level
+  knowledge distillation (SeqKD)**" (teacher 27B ≠ student 4B); "RFT" an OK
+  synonym; AVOID unqualified "knowledge distillation" (no KL to point to).
+- **5.1 What's trained + setup.** Qwen3.5-4B + LoRA (PEFT); VLM frozen external;
+  train==deploy scaffold; backbone pivot (8B→4B). **Hyperparameter sweep (LoRA
+  rank, learning rate)**; each checkpoint quick-screened on **docvqa-mini (13Q
+  representative subset)**, best → **full 80Q val**. Eval per §3.1 (binary
+  ANLS@0.9, thinking-OFF). **Report pass@k alongside ANLS** (baseline/SFT/RL;
+  already emitted to results.json at n≥2). Baselines: untrained-4B + leaderboard
+  anchors. verl/FSDP.
+- **5.2 Data pool** (see docvqa `docs/training-data-pool.md` + mining/pillarB-capture.md).
+  No DocVQA train split → assembled from **8 sources** (cite each): DocVQA
+  (2007.00398), InfographicVQA (2104.12756), ChartQA (2203.10244), MapQA
+  (2211.08545), MP-DocVQA (2212.05935), TAT-DQA (2207.11871), SlideVQA
+  (2301.04883), **MMLongBench-Doc (2407.01523)** [WAS MISSING — essential
+  long-doc source]. Deliberately **page-count-diverse**; balanced sampler
+  (~1500/source → ~11,464 prompts, seed 42); leakage-checked (dHash→pixel) vs val.
+- **5.3 Results (PENDING).** Phase-B (codeact_chat rollouts, corrected-scaffold
+  baseline 22.34) full-val PENDING; preliminary ≈ null. ⚠️ Phase-A's 15.3→20.6
+  (+5.3) is on the OLD scaffold — **non-comparable, do NOT headline.** Honest
+  obstacle = **long-document runaway** bounding the small agent (38.8% of base-4B
+  rollouts hit a budget cap without submitting; r≈0.70 with num_pages). Per the
+  page-count analysis this is a **capability × long-doc** effect (weak 4B can't
+  navigate long docs under budget; 27B unaffected, effort length-flat) — NOT
+  append-only context growth; decouple from the prefix property.
+- **5.4 RL (planned, details pending from user).** GRPO; RL-train BOTH the
+  SFT-init checkpoint AND the untrained 4B baseline, compared. pass@k reported.
+  **RL MOTIVATION = oracle headroom (pass@1↔pass@k gap):** base-4B avg@1 22.3 but
+  **pass@8 55.0** (codeact_chat 4B/27B; 27B 39.5→63.8; 4B-homog 16.3→47.5) — the
+  capability is already there in *some* trial; RL's job is converting headroom into
+  reliable pass@1. SFT moves avg@1 toward the ceiling but does NOT raise pass@k
+  (in-domain SFT 15.3→19.0 avg@1, pass@4 flat ~34) = sharpens consistency, doesn't
+  expand capability. Frame pass@k as the ceiling, training as closing the gap.
+  ⚠️ NO pass@k *harness-ranking* claim (Pillar A) until the 27B matrix per-trial
+  artifacts are re-run (deleted; only codeact_chat/vsearch/Gemma-31B retained).
+  Pillar A headline (avg@1) unaffected. [detail: docs/results.md pass@k section]
+- **Candidate figures (trajviewer /stats):** rejection efficiency (trials-to-first-
+  correct), best-ANLS yield/question, page-count diversity, per-category; data in
+  outputs/runs/*/trajectories.jsonl (manual screenshot or matplotlib re-derive).
 
 # §6 Related Work · ~0.5pp · 🔵 (drafted; minor reframe)
 - RL for LLMs: GRPO (2402.03300) + Dr.GRPO (2503.20783), DAPO (2503.14476), GSPO

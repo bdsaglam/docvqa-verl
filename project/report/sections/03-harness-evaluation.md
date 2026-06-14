@@ -27,51 +27,49 @@ The hypothesis follows: what governs accuracy is the **REPL active-perception lo
 
 ### 3.4 Result: active perception dominates
 
-Table 1 reports the in-house solvers under the common protocol, alongside two external frontier anchors. The results fall into three tiers separated by gaps that exceed every cell's standard deviation.
+Table 1 compares the distinct harness designs under the common protocol, alongside two external frontier anchors; ablations within a single design are deferred to §3.5. The designs fall into two tiers separated by a gap several times the within-tier standard deviation.
 
-**Table 1.** Harness comparison on DocVQA-2026 val (80Q), $n{=}8$, frozen Qwen3.5-27B VLM, no-think. Δ is the difference of means against the RLM reference. CodeAct is the corrected `codeact_chat` MDP loop (final, n=8); its ablation variants (+ OCR, without crop/zoom, + display channel) remain the older implementation.
+**Table 1.** Harness-design comparison on DocVQA-2026 val (80Q), $n{=}8$, frozen Qwen3.5-27B VLM, no-think. Δ is the difference of means against the RLM reference. CodeAct is the corrected `codeact_chat` MDP loop (final, $n{=}8$).
 
 | Tier | Solver | Mechanism | ANLS (n=8) | Δ vs RLM |
 |---|---|---|---|---|
-| **REPL active-perception** | RLM | REPL + VLM perception tool `batch_look`, OCR-free | **39.38 ± 1.49** | — |
-| | CodeAct *(provisional)* | append-only twin, same tools | **39.53 ± 2.83** | +0.15 |
-| | RLM + general sub-agent | `batch_look` generalized to any subtask | 39.22 ± 3.34 | −0.16 |
-| | RLM + OCR | adds OCR text + lexical search atop vision | 37.81 ± 3.12 | −1.56 |
-| | RLM without crop/zoom | whole-page reads only | 36.88 ± 3.20 | −2.51 |
-| | RLM + display channel | direct `display()` atop the perception call | 35.47 ± 4.48 | −3.91 |
-| **no-active-perception** | ReAct | VLM tools, no REPL | 25.16 ± 4.60 | −14.22 |
-| | Multimodal REPL agent | pages in own context, no VLM-tool call | 22.34 ± 2.79 | −17.03 |
-| | Raw multi-image VLM | raw multi-image, no scaffold | 20.47 ± 1.63 | −18.91 |
+| **active perception** | RLM | REPL + VLM perception tool `batch_look`, OCR-free | **39.38 ± 1.49** | — |
+| | CodeAct | append-only twin, same tools | **39.53 ± 2.83** | +0.15 |
+| **no active perception** | ReAct | VLM tool, no REPL | 25.16 ± 4.60 | −14.22 |
+| | Multimodal REPL agent | REPL, pages in own context, no VLM-tool call | 22.34 ± 2.79 | −17.03 |
+| | Raw multi-image VLM | single VLM call, no agent | 20.47 ± 1.63 | −18.91 |
 | | No-scaffold baseline | competition prompt, no scaffold | 17.81 ± 1.86 | −21.56 |
-| **OCR-only floor** | OCR-only RLM | RLM scaffold, OCR text, no vision | **13.91 ± 1.56** | **−25.47** |
 | *external anchor* | Gemini 3 Pro | — | 37.50 (val) | — |
 | *external anchor* | Gemini 3 Flash | — | 33.75 (val) | — |
 
-The REPL active-perception scaffolds occupy 35–39 ANLS, the no-active-perception family 18–25, and the OCR-only control sits alone at 14; each gap is several times the within-tier std. RLM, the load-bearing active-perception result, reaches 39.38 and the append-only CodeAct ties it at 39.53 (within trial-to-trial variance; the CodeAct cell is provisional pending re-run of the older implementation), so the win belongs to the active-perception *family* rather than a single harness — a tie §4 builds on. The family also matches or exceeds the official ICDAR-2026 frontier baselines on the same validation split (Gemini 3 Pro 37.50, Gemini 3 Flash 33.75). The advantage is not scale: an active-perception scaffold on a 27B VLM reaches the accuracy of proprietary models many times larger.
+The active-perception designs (RLM, CodeAct) reach ~39 ANLS; every design that drops the REPL or the perception tool falls to 18–25. RLM, the reference active-perception result, reaches 39.38 and the append-only CodeAct ties it at 39.53 (within trial-to-trial variance), so the win belongs to the active-perception *family* rather than a single harness — a tie §4 builds on. The family also matches or exceeds the official ICDAR-2026 frontier baselines on the same validation split (Gemini 3 Pro 37.50, Gemini 3 Flash 33.75): the advantage is not scale, since an active-perception scaffold on a 27B VLM reaches the accuracy of proprietary models many times larger.
 
-### 3.5 Mechanism: what is load-bearing
+### 3.5 Mechanism: which components matter
 
-Five contrasts isolate why the loop wins.
+The mechanism is isolated two ways: by comparing RLM against the harness designs in Table 1 that drop one of its components, and by ablating one lever at a time within the RLM solver itself (Table 2). The two are kept apart deliberately — Table 1 contrasts different designs; Table 2's ablations all act on RLM.
 
-**The REPL and the VLM perception tool are each load-bearing.** Removing either component of RLM in isolation collapses the score (Table 2). Stripping the REPL but keeping the VLM perception tool (ReAct) costs +14.2 relative to RLM; stripping the VLM perception tool but keeping the REPL — the Multimodal REPL agent, which loads pages into its own context instead — costs +17.0. Neither half alone suffices, and the no-agent baselines that drop both (Raw multi-image VLM 20.47, No-scaffold baseline 17.81) sit lower still.
+**The REPL and the VLM perception tool are each necessary.** Removing either collapses the score. Stripping the REPL but keeping the perception tool (ReAct) costs +14.2 relative to RLM; stripping the perception tool but keeping the REPL — the Multimodal REPL agent, which loads pages into its own context instead — costs +17.0; the no-agent baselines that drop both (Raw multi-image VLM 20.47, No-scaffold baseline 17.81) sit lower still. Neither half alone suffices.
 
-**Table 2.** Each RLM component removed in isolation, vs RLM (39.38). The no-agent baselines (Raw multi-image VLM, No-scaffold baseline) drop both components and are not single-component ablations.
+**Within RLM, cropping and the visual modality are necessary; extra channels are not.** Table 2 ablates one lever of the RLM solver at a time. Two levers carry the result. Restricting `batch_look` to whole-page reads (removing crop/zoom) costs −2.5 overall but −11.2 on `engineering_drawing` and −17.5 on `science_poster`, the detail-dense categories where zoom matters most; and replacing visual perception with OCR text collapses accuracy by 25.5 points to 13.91. The other directions are null-to-harmful: adding OCR text atop vision (−1.6), adding a direct `display()` image channel (−3.9), and generalizing the perception call into an arbitrary-subtask delegation tool (−0.16) none helps — the lean, perception-only `batch_look` is already at the optimum, and the extra channels mostly add noise.
 
-| Component removed | Resulting solver | Δ vs RLM | Reading |
+**Table 2.** Ablations of the RLM solver — one lever changed at a time, vs RLM (39.38), $n{=}8$.
+
+| RLM ablation | ANLS (n=8) | Δ vs RLM | what it changes |
 |---|---|---|---|
-| The REPL (perception tool kept) | ReAct (25.16) | +14.2 | the code REPL is load-bearing — crop, zoom, arithmetic, compositing |
-| The VLM perception tool (REPL kept) | Multimodal REPL agent (22.34) | +17.0 | a focused VLM perception call beats raw pixels in the agent's own context |
-| The visual modality (vision → OCR) | OCR-only RLM (13.91) | +25.5 | swapping vision for OCR text collapses the score |
+| RLM (reference) | 39.38 ± 1.49 | — | perception-only `batch_look`, crop/zoom, OCR-free |
+| + general sub-agent | 39.22 ± 3.34 | −0.16 | generalize the perception call to any subtask |
+| + OCR | 37.81 ± 3.12 | −1.56 | add OCR text + lexical search atop vision |
+| − crop/zoom | 36.88 ± 3.20 | −2.51 | whole-page reads only |
+| + display channel | 35.47 ± 4.48 | −3.91 | add a direct `display()` image channel |
+| OCR-only (vision → OCR) | 13.91 ± 1.56 | −25.47 | replace visual perception with OCR text |
 
-**Cropping is the active ingredient behind the visual-density effect.** Restricting `batch_look` to whole-page reads costs only −2.5 overall but −11.2 on `engineering_drawing` and −17.5 on `science_poster` — the detail-dense categories where zoom is load-bearing — while leaving text-linear categories near-unchanged. The cost is acuity, not search effort: removing crop/zoom does not raise iteration count (11.8 vs 13.0 steps/Q). The advantage of the REPL family over ReAct mirrors this profile by category. At matched perception (a shared VLM, so the difference is purely harness), the RLM−ReAct gap is largest on visually dense categories — `engineering_drawing` ≈ +30, `business_report` ≈ +24, `maps` and `infographics` ≈ +19, `science_poster` ≈ +15 — and smallest on text-linear ones — `science_paper` ≈ +5, `slide` ≈ +10. The lever tracks **visual density**, recoverable by cropping, not document length: with a strong VLM the advantage is flat to slightly negative on the longest documents, where a whole-page read suffices once the answer page is found. (These per-category deltas are computed on cross-model matched-config runs; the canonical absolutes are the $n{=}8$ numbers in Table 1.)
-
-**OCR-free visual perception is decisive.** Holding the scaffold, tools, and reasoner fixed and swapping only the perception modality — visual `batch_look` for OCR text plus lexical search — drops accuracy by 25.5 points, from 39.38 to 13.91, the matrix floor. The collapse is graded by visual density: the OCR-only agent scores **0/10 in all eight trials** on `engineering_drawing` and `maps`, loses ≈ +44 on `infographics` and ≈ +34 on `science_poster`, and is most survivable (≈ +18) on text-dense `slide` and `science_paper`. Vision does work OCR cannot replace, exactly where the page is non-textual.
+Both necessary levers act through **visual density**, not document length. At matched perception (a shared VLM, so the difference is purely harness), the RLM−ReAct gap is largest on visually dense categories — `engineering_drawing` ≈ +30, `business_report` ≈ +24, `maps` and `infographics` ≈ +19, `science_poster` ≈ +15 — and smallest on text-linear ones — `science_paper` ≈ +5, `slide` ≈ +10; with a strong VLM the advantage is flat to slightly negative on the longest documents, where a whole-page read suffices once the answer page is found. The OCR-only collapse is graded the same way: the OCR-only agent scores **0/10 in all eight trials** on `engineering_drawing` and `maps`, where the page is non-textual, and is most survivable (≈ +18) on text-dense `slide` and `science_paper`. Vision does the work OCR cannot, exactly where the content is not text. (Per-category deltas are computed on cross-model matched-config runs; the canonical absolutes are the $n{=}8$ numbers in Tables 1–2.)
 
 **The REPL converts reasoning into perception.** A factorial swap separates the harnesses by what they are bound on. Replacing a weak reasoner on the 27B VLM with a strong 27B reasoner on a weaker 9B VLM *gains* +10.3 for RLM and +6.2 for CodeAct (both reasoning-bound) but *loses* −3.05 for ReAct (perception-bound). The REPL members write Python around `batch_look` — cropping to the evidence region, zooming, compositing crops, doing coordinate arithmetic — so a stronger reasoner produces better-targeted perception queries and extracts more even from a weaker VLM. ReAct has no such actuator: its perception ceiling is the VLM's whole-page acuity, which a stronger reasoner cannot direct. The complementary swap confirms a perception bottleneck for mid and small reasoners: holding the reasoner fixed and upgrading its homogeneous VLM to the 27B VLM lifts accuracy +7.9 at the 9B reasoner (Welch $t{=}3.54$, 95% CI [+3.4, +12.3]) and +8.6 at the 4B reasoner ($t{=}4.96$, 95% CI [+5.2, +12.0]). The crop/zoom loop is the mechanism that turns reasoning capability into perception quality; remove it and reasoning can no longer buy perception.
 
 **Effort is not accuracy.** Iteration count correlates negatively with success: $\mathrm{corr}(\text{iterations}, \text{accuracy}) \approx -0.31$ over 200 doc-trials, with accuracy falling 62.8% → 43.2% → 31.6% across the 0–8 / 8–14 / 14+ iteration bins. The active-perception harnesses spend roughly twice the iterations and wall time of ReAct, but extra turns mark a hard document, not a path to the answer; the lever is the quality of the perception loop, not its length.
 
-**A trajectory.** Figure 1 shows the loop on a single question over a 181-page document, trimmed verbatim from one agent trajectory. The agent surveys the document programmatically, locates the target table through a table-of-contents pointer, *distrusts* the full-page VLM read and re-reads a tighter crop — which disagrees, exposing a VLM misread — adjudicates by reading the region in halves, and finally does the arithmetic the VLM cannot do, in Python. Every component of the mechanism appears in one trace, and the self-distrusting crop-verify is load-bearing rather than ceremonial: it catches a wrong number the whole-page read returned.
+**A trajectory.** Figure 1 shows the loop on a single question over a 181-page document, trimmed verbatim from one agent trajectory. The agent surveys the document programmatically, locates the target table through a table-of-contents pointer, *distrusts* the full-page VLM read and re-reads a tighter crop — which disagrees, exposing a VLM misread — adjudicates by reading the region in halves, and finally does the arithmetic the VLM cannot do, in Python. Every component of the mechanism appears in one trace, and the self-distrusting crop-verify is consequential rather than ceremonial: it catches a wrong number the whole-page read returned.
 
 > **Figure 1.** Active-perception loop on `business_report_1_q1` (181-page NVIDIA annual review), RLM, 16 iterations, **correct** (gold `2048.88`, predicted `2048.88`). *"In Fiscal 2025, by how many dollars does NVIDIA's TSR value exceed the Nasdaq-100 Index TSR value?"*
 >

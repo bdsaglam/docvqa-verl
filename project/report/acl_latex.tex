@@ -1,0 +1,78 @@
+\documentclass[11pt]{article}
+
+% Course term-project report (COGS 560). Non-anonymous, page-numbered: use the
+% "final" option of the ACL style. Switch to "review" for an anonymous version.
+\usepackage[final]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{graphicx}
+
+% Math and tables
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+
+% Diagrams and plots
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,backgrounds,fit,calc,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{colorbrewer}
+\usepgfplotslibrary{groupplots}
+
+% Code listings (active-perception trajectory figure)
+\usepackage{listings}
+\definecolor{codecomment}{rgb}{0.40,0.45,0.50}
+\definecolor{codekw}{rgb}{0.55,0.10,0.45}
+\definecolor{codestr}{rgb}{0.10,0.40,0.20}
+\lstdefinestyle{pyagent}{
+  language=Python,
+  basicstyle=\ttfamily\scriptsize,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw},
+  stringstyle=\color{codestr},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  aboveskip=2pt,
+  belowskip=2pt,
+  xleftmargin=2pt,
+}
+
+\title{Seeing by Coding: Active Perception Lifts Document Agents Across Model Families}
+
+\author{Bar\i{}\c{s} Deniz Sa\u{g}lam \\
+  COGS 560 Term Project \\
+  \texttt{e155841@metu.edu.tr} \\}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Document visual question answering on long, multi-page, high-resolution documents resists both small agents and frontier-scale frozen models: on the ICDAR~2026 DocVQA validation set, bare setups score 17--22 ANLS and frontier models plateau near 33--38. We show that the dominant lever is not model scale but \emph{active perception} --- giving a code-capable reasoner a persistent Python REPL and a single on-demand call to a frozen vision--language model, so it can crop, zoom, and compute over document regions rather than read them whole. Holding both models fixed and varying only the scaffold spans roughly 25 ANLS points; a REPL active-perception scaffold on a 27B VLM reaches $\sim$39 ANLS, matching or exceeding much larger frozen models and far surpassing tool-based ReAct. The advantage concentrates on visually dense pages, collapses when vision is replaced by OCR, and generalizes across model families given a capable-enough base. Because the append-only member of this scaffold family preserves the growing-prefix trajectory that weight-level training assumes, we use it to ask, in a preliminary study, whether fine-tuning can lift a $\leq$8B agent further.
+\end{abstract}
+
+\input{tex/01-introduction}
+\input{tex/02-background}
+\input{tex/03-harness}
+\input{tex/04-trainable-scaffold}
+\input{tex/05-training}
+\input{tex/06-related-work}
+\input{tex/07-conclusion}
+
+\section*{Limitations}
+\input{tex/08-limitations}
+
+\bibliography{references}
+
+\end{document}

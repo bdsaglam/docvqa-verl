@@ -1,0 +1,40 @@
+\begin{figure}[t]
+\centering
+\footnotesize
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw,rounded corners,align=center,inner sep=2.5pt,minimum height=0.62cm,text width=2.3cm},
+  lm/.style={box,draw=blue!55,fill=blue!7},
+  repl/.style={box,draw=green!45!black,fill=green!8},
+  vlm/.style={box,draw=orange!75!black,fill=orange!9},
+  doc/.style={box,draw=gray!60,fill=gray!10},
+  fl/.style={-{Latex[length=1.6mm]},thick},
+  node distance=0.42cm
+]
+% ---------- Panel A: active perception ----------
+\node[font=\bfseries] (ta) at (0,0.5) {Active perception};
+\node[lm]   (alm)  at (0,0)      {Reasoner-LM};
+\node[repl] (arepl) [below=of alm] {Python REPL};
+\node[vlm]  (avlm) [below=of arepl] {frozen VLM};
+\node[doc]  (adoc) [below=of avlm] {document pages};
+\draw[fl,blue!55]   (alm) -- node[right,font=\scriptsize]{writes code} (arepl);
+\draw[fl,green!45!black] (arepl) -- node[right,font=\scriptsize]{\texttt{batch\_look}} node[left,font=\scriptsize]{crop/zoom} (avlm);
+\draw[fl,orange!75!black] (avlm) -- (adoc);
+\draw[fl,orange!75!black,dashed] (avlm.west) .. controls +(-1.1,0) and +(-1.1,0) .. node[left,font=\scriptsize]{obs}(arepl.west);
+
+% ---------- Panel B: ReAct ----------
+\node[font=\bfseries] (tb) at (4.6,0.5) {ReAct (no REPL)};
+\node[lm]   (blm)  at (4.6,0)      {Reasoner-LM};
+\node[vlm]  (bvlm) [below=0.84cm of blm] {frozen VLM};
+\node[doc]  (bdoc) [below=of bvlm] {document pages};
+\draw[fl,blue!55]   (blm) -- node[right,font=\scriptsize]{tool call} (bvlm);
+\draw[fl,orange!75!black] (bvlm) -- node[right,font=\scriptsize]{whole page} (bdoc);
+\draw[fl,orange!75!black,dashed] (bvlm.west) .. controls +(-1.0,0) and +(-1.0,0) .. node[left,font=\scriptsize]{obs}(blm.west);
+\node[font=\scriptsize,gray!50!black,text width=2.6cm,align=center,below=0.3cm of bdoc]
+  {no crop/zoom: perception fixed at page granularity};
+\end{tikzpicture}%
+}
+\caption{The active-perception scaffold (left) inserts a Python REPL between reasoner and VLM, so the reasoner programs its perception --- cropping and zooming to image regions via \texttt{batch\_look}. ReAct (right) calls the same frozen VLM but without a REPL, so its only actuator is a whole-page query at fixed granularity. The REPL is the sole structural difference, and it is what converts reasoning into targeted perception (\S\ref{sec:mechanism}).}
+\label{fig:arch}
+\end{figure}
