@@ -135,7 +135,9 @@ def _build_loop(base_url: str, model: str,
 async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
                    sampling: dict, rollout_timeout: float | None = None,
                    save_token_ids: bool = True,
-                   max_keep: int | None = None) -> dict[str, Any]:
+                   max_keep: int | None = None,
+                   on_sample=None,
+                   existing: dict[int, dict] | None = None) -> dict[str, Any]:
     """Run up to n rollouts for one question; return full per-sample records
     (incl. the chat ``messages`` trajectory) + scoring.
 
@@ -161,6 +163,13 @@ async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
     gold = q.get("answer")
     samples: list[dict[str, Any]] = []
     for sample_idx in range(n):
+        # Sample-level resume: a good prior rollout for this slot is reused as-is
+        # (already streamed to disk in an earlier run — don't re-run or re-write
+        # it). Only missing/flagged slots fall through and run fresh. ``existing``
+        # is empty for a never-run question, so this is a no-op there.
+        if existing is not None and sample_idx in existing:
+            samples.append(existing[sample_idx])
+            continue
         t0 = time.monotonic()
         rec: dict[str, Any] = {
             "sample_idx": sample_idx, "submitted_answer": None,
@@ -215,6 +224,10 @@ async def _solve_n(loop: DocVQAReplAgentLoop, q: dict, n: int,
             rec.update(termination=f"error:{e!r}",
                        wall_clock_s=time.monotonic() - t0)
         samples.append(rec)
+        # Stream this rollout to disk immediately (crash-safe + live progress):
+        # don't wait for all n rollouts of the question to finish before persisting.
+        if on_sample is not None:
+            await on_sample(rec)
         # Rejection-sampling early stop: once we have enough keepers, stop
         # spending rollouts on this (easy) prompt and free the slot.
         if max_keep is not None and sum(s["anls"] == 1.0 for s in samples) >= max_keep:
@@ -274,7 +287,9 @@ def _write_summary(run_dir: Path, results: list[dict], meta: dict) -> dict:
 
 
 def _load_done_results(run_dir: Path, n: int, aggregate_question,
-                       max_keep: int | None = None) -> tuple[set, list[dict]]:
+                       max_keep: int | None = None,
+                       rerun_terminations: set | None = None,
+                       ) -> tuple[set, list[dict], dict]:
     """For ``--resume``: scan already-streamed trajectories and rebuild per-question
     result entries so the final summary covers resumed + newly-run questions.
 
@@ -283,7 +298,17 @@ def _load_done_results(run_dir: Path, n: int, aggregate_question,
     ``max_keep`` (rejection-sampling generation, variable rollout count) a
     question is done iff it reached ``max_keep`` keepers (anls==1.0) OR exhausted
     the budget (>= n samples) — so solved-early and proven-unsolvable prompts are
-    both skipped, and only genuinely-partial ones re-run."""
+    both skipped, and only genuinely-partial ones re-run.
+
+    ``rerun_terminations`` (e.g. {"wall_cap","token_cap"}) makes resume operate at
+    the *sample* level: a slot whose recorded termination is in the set is treated
+    as NOT done, so only those slots re-run while the good slots are reused as-is.
+    A timed-out rollout is a censored measurement, not a wrong answer — relieving
+    it (with more time / less load) recovers the true score without re-sampling the
+    good rollouts. Returns ``(done_ids, done_results, partial_existing)`` where
+    ``partial_existing[qid] = {sample_idx: good_record}`` for not-yet-done questions
+    (passed into ``_solve_n(existing=...)`` so it only fills the missing slots)."""
+    rerun = rerun_terminations or set()
     by_qid: dict[str, list[dict]] = {}
     for fp in run_dir.glob("tasks/*/trajectories.jsonl"):
         with fp.open() as f:
@@ -294,14 +319,26 @@ def _load_done_results(run_dir: Path, n: int, aggregate_question,
                     by_qid.setdefault(rec.get("question_id"), []).append(rec)
     done_ids: set = set()
     done_results: list[dict] = []
+    partial_existing: dict[str, dict[int, dict]] = {}
     for qid, recs in by_qid.items():
+        # Per-rollout streaming means a question interrupted mid-way can leave
+        # partial samples; resuming re-runs it and re-appends the same
+        # sample_idx values. Dedup by sample_idx (keep last) before any count
+        # check so duplicates can't inflate the done-count or the summary.
+        dedup = {r.get("sample_idx", 0): r for r in recs}
+        # A slot is "good" (reusable) iff its termination is not flagged for rerun.
+        good = {i: r for i, r in dedup.items()
+                if i < n and r.get("termination") not in rerun}
         if max_keep is not None:
-            keepers = sum(1 for r in recs if r.get("anls") == 1.0)
-            if keepers < max_keep and len(recs) < n:
+            keepers = sum(1 for r in good.values() if r.get("anls") == 1.0)
+            if keepers < max_keep and len(good) < n:
+                partial_existing[qid] = good
                 continue
-        elif len(recs) < n:
+        elif len(good) < n:
+            # Missing or flagged slots remain to run; reuse the good ones.
+            partial_existing[qid] = good
             continue
-        recs = sorted(recs, key=lambda r: r.get("sample_idx", 0))[:n]
+        recs = [good[i] for i in sorted(good)][:n]
         agg = aggregate_question([r.get("submitted_answer") for r in recs],
                                  recs[0].get("gold_answer"))
         done_ids.add(qid)
@@ -313,7 +350,7 @@ def _load_done_results(run_dir: Path, n: int, aggregate_question,
             "samples": recs, "n": len(recs),
             **{k: agg[k] for k in ("mean", "passk", "sc", "scores", "voted_answer")},
         })
-    return done_ids, done_results
+    return done_ids, done_results, partial_existing
 
 
 async def _main_async(args) -> None:
@@ -337,15 +374,23 @@ async def _main_async(args) -> None:
     run_dir = Path(args.run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    rerun_terminations = {t.strip() for t in (args.rerun_terminations or "").split(",")
+                          if t.strip()}
     total_questions = len(questions)
     done_results: list[dict] = []
+    partial_existing: dict[str, dict[int, dict]] = {}
     if args.resume:
-        done_ids, done_results = _load_done_results(run_dir, args.n, aggregate_question,
-                                                     max_keep=args.max_keep)
-        if done_ids:
+        done_ids, done_results, partial_existing = _load_done_results(
+            run_dir, args.n, aggregate_question,
+            max_keep=args.max_keep, rerun_terminations=rerun_terminations)
+        if done_ids or partial_existing:
             questions = [q for q in questions if q.get("question_id") not in done_ids]
-            print(f"[resume] {len(done_ids)} questions already complete in {run_dir}; "
-                  f"running {len(questions)} remaining (of {total_questions}).",
+            n_reuse = sum(len(v) for v in partial_existing.values())
+            print(f"[resume] {len(done_ids)} questions complete in {run_dir}; "
+                  f"running {len(questions)} remaining (of {total_questions})"
+                  + (f"; reusing {n_reuse} good slots across {len(partial_existing)} "
+                     f"partial questions (rerun={sorted(rerun_terminations) or 'none'})"
+                     if partial_existing else "") + ".",
                   file=sys.stderr)
         else:
             print(f"[resume] no completed questions found in {run_dir}; "
@@ -367,31 +412,35 @@ async def _main_async(args) -> None:
     (run_dir / "config.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
     write_lock = asyncio.Lock()
 
+    async def _write_record(q: dict, s: dict) -> None:
+        # Stream one rollout to tasks/<doc>/trajectories.jsonl the moment it
+        # finishes — crash-safe + live progress (don't wait for all n rollouts of
+        # the question). This file is also the trajectory-collection output.
+        doc_id = str(q.get("doc_id") or q["question_id"])
+        tdir = run_dir / "tasks" / doc_id
+        async with write_lock:
+            tdir.mkdir(parents=True, exist_ok=True)
+            with (tdir / "trajectories.jsonl").open("a") as f:
+                f.write(json.dumps({
+                    "record_id": f"{args.dataset}:{args.split}:{doc_id}:{q['question_id']}:{s['sample_idx']}",
+                    "question_id": q["question_id"], "doc_id": doc_id,
+                    "category": q.get("category", "unknown"), "question": q.get("question"),
+                    "gold_answer": q.get("answer"),
+                    "model": args.model, "vlm_model": args.vlm_model,
+                    "sampling": sampling,
+                    **s,
+                }, ensure_ascii=False) + "\n")
+
     async def _bound(q: dict) -> dict[str, Any]:
         async with sem:
             raw = await _solve_n(loop_obj, q, args.n, sampling, rollout_timeout,
                                  save_token_ids=args.save_token_ids,
-                                 max_keep=args.max_keep)
+                                 max_keep=args.max_keep,
+                                 on_sample=lambda s: _write_record(q, s),
+                                 existing=partial_existing.get(q.get("question_id")))
         samples = raw["samples"]
         agg = aggregate_question([s["submitted_answer"] for s in samples],
                                  raw["gold_answer"])
-        doc_id = str(raw["doc_id"] or raw["question_id"])
-        tdir = run_dir / "tasks" / doc_id
-        # Stream the structured trajectory immediately (crash-safe; this is the
-        # collection output — full messages + anls + termination per sample).
-        async with write_lock:
-            tdir.mkdir(parents=True, exist_ok=True)
-            with (tdir / "trajectories.jsonl").open("a") as f:
-                for s in samples:
-                    f.write(json.dumps({
-                        "record_id": f"{args.dataset}:{args.split}:{doc_id}:{raw['question_id']}:{s['sample_idx']}",
-                        "question_id": raw["question_id"], "doc_id": doc_id,
-                        "category": raw["category"], "question": raw["question"],
-                        "gold_answer": raw["gold_answer"],
-                        "model": args.model, "vlm_model": args.vlm_model,
-                        "sampling": sampling,
-                        **s,
-                    }, ensure_ascii=False) + "\n")
         return {**{k: raw[k] for k in ("question_id", "doc_id", "category",
                                        "question", "gold_answer", "samples")},
                 "n": len(samples),
@@ -474,6 +523,15 @@ def main() -> None:
                          "already have >= n streamed samples and only run the rest. "
                          "The final results.json summary still covers all questions "
                          "(reconstructed-from-disk + newly-run).")
+    ap.add_argument("--rerun-terminations", default="",
+                    help="With --resume, treat slots whose recorded termination is "
+                         "in this comma-separated set (e.g. 'wall_cap,token_cap') as "
+                         "NOT done, so ONLY those sample slots re-run while good slots "
+                         "are reused. Sample-level resume: relieves censored "
+                         "(timed-out) rollouts without re-sampling good ones. The old "
+                         "re-run record stays in the .jsonl but is superseded by the "
+                         "new one (dedup keep-last) — run outputs/_dedup_trajectories.py "
+                         "after to clean. Default '' = question-level resume (legacy).")
     args = ap.parse_args()
     asyncio.run(_main_async(args))
 

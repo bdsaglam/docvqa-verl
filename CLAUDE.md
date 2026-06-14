@@ -35,8 +35,13 @@ project; the **agent scaffold and evaluation** live in `~/repos/docvqa`.
 
 - **Agent scaffold = CodeAct (fixed design)**: a strictly **append-only**,
   multi-turn REPL agent, implemented for this repo in `docvqa/agent_loop.py`
-  (`DocVQAReplAgentLoop`). Each turn the LM emits `<think>...</think>` + a single
-  ```` ```python ```` fenced block; the code runs in a persistent CPython
+  (`DocVQAReplAgentLoop`). Each turn the LM emits free-text reasoning + a single
+  ```` ```python ```` fenced block; **native thinking is DISABLED for both the LM
+  and the VLM** (`enable_thinking=False` — eval passes `--no-thinking`; the VLM
+  call sets it in `chat_template_kwargs` and strips any leaked reasoning). So the
+  reasoning is plain text before the fence (not `<think>...</think>` — empirically
+  `<think>` shows up in <0.5% of turns as a rare model leak), and only the fenced
+  code is parsed/executed. The code runs in a persistent CPython
   subprocess whose only visual tool is `batch_look(requests)` against the frozen
   VLM, and whose only terminal action is `SUBMIT(answer=...)`. Captured stdout is
   appended verbatim as the next turn → a fully-observable MDP (the property SFT /
@@ -47,8 +52,8 @@ project; the **agent scaffold and evaluation** live in `~/repos/docvqa`.
   older BM25/OCR `search` tool was dropped — recursive VLM perception is the
   load-bearing mechanism). Solves via a *survey → locate → extract → verify →
   submit* loop. In this repo BOTH trajectory collection and eval run this same
-  `agent_loop`, so the policy we train == the policy we deploy. The `<think>` +
-  fence text format is **intentionally different** from the docvqa dspy
+  `agent_loop`, so the policy we train == the policy we deploy. The free-text-
+  reasoning + fence format is **intentionally different** from the docvqa dspy
   `codeact_solver`'s `[[ ## reasoning ## ]]` ChatAdapter markers — verl SFT
   trains on raw-text completions over a chat-message list.
 - **What we fine-tune**: only the LM weights. LoRA adapters by default so
@@ -107,6 +112,43 @@ prep for training prompts (DocVQA-family datasets), checkpoint management.
 **Don't do here:** the agent scaffold itself (lives in `~/repos/docvqa`),
 evaluation runs (also there), one-off prompting tweaks unrelated to
 training.
+
+## Evaluation methodology (read before comparing eval numbers)
+
+- **Mini/ranking subsets are directionally representative — trust the sign, not
+  the decimals.** A small ranking set (e.g. `docvqa_rank13`, 13Q/1-per-doc) can
+  shift the *best-config pick* by a few points and is noisy for fine ranking, but
+  it does reflect real capability. So a **genuine improvement on the mini set
+  should NOT turn into a degradation on the full set.** If it appears to flip
+  (mini looks better, full looks worse), **suspect a measurement artifact FIRST —
+  do not impeach the mini.** Investigate before concluding the small eval was
+  "just noise."
+- **The usual artifact here is the `wall_cap` (rollout-timeout) rate**, and it is
+  a *recurring* confound in this project (parity run logged ~27.5% caps; runaway
+  no-think hit ~45%). Rollouts that time out are scored 0 — a **censored
+  measurement, not a wrong answer.** Cap rate varies with concurrency, document
+  page-count (11–30pg docs do 100+ sequential `batch_look` calls), and VLM load,
+  so two runs of the *same* model under different conditions can post very
+  different *overall* ANLS while having the same true capability.
+- **Diagnostic: split overall ANLS into capability × completion.** Report
+  **submit-only ANLS** (mean over rollouts that actually submitted — the stable
+  capability signal) alongside **overall ANLS** (= roughly capability × (1 −
+  cap_rate)) and the **cap rate**. A large gap between two runs' *overall* scores
+  with *stable submit-only* scores ⇒ the gap is timeouts, not the model.
+  - Worked example (why this section exists): SFT `lr4e4` looked like ~27% on the
+    mini but 16.6% overall on full-val — read at face value that's a degradation.
+    But full-val **submit-only was 24.8%** with a **23.8% cap rate**; the "drop"
+    was caps, not capability. The mini was representative; the full *overall*
+    number was the contaminated one.
+- **Practical rules:** (1) hold concurrency at the level that maximizes
+  *completed* rollouts, not raw throughput (over-saturating the VLM starves each
+  rollout → more timeouts); (2) for any cross-run comparison, match conditions or
+  report submit-only + cap rate; (3) timed-out slots can be relieved without
+  re-sampling good ones via `eval.py --resume --rerun-terminations wall_cap` (then
+  `outputs/_dedup_trajectories.py`). **The same timeouts hit RL rollouts** — a
+  capped rollout costs full wall-clock and returns reward 0, and an all-capped
+  group has zero advantage variance (no gradient), so raise the RL rollout-timeout
+  and/or filter zero-variance groups.
 
 ## RL-training practices (read before the RL stages)
 
