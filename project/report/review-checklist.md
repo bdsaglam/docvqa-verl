@@ -23,7 +23,7 @@ findings. The reviewer **reports**; it does not edit.
   frontier-model scores, literature claims) the reviewer usually **cannot** verify the
   ground truth — flag these `VERIFY` rather than asserting them wrong.
 - **Source of truth = the LaTeX**, not `draft.md` (which is a stale Markdown concat).
-  Read `project/report/acl_latex.tex` + `project/report/tex/*.tex`. Use
+  Read `project/report/latex/acl_latex.tex` + `project/report/latex/tex/*.tex` (with `references.bib`, `acl.sty`, `figs/` alongside). Use
   `pdftotext`/the compiled PDF for float, cross-reference, and layout checks.
 - **Known-provisional / scoped-out items (do NOT flag as errors; DO flag if mis-stated):**
   - Part 2 (training) is **intentionally narrowed to a preliminary supervised study**;
@@ -35,10 +35,13 @@ findings. The reviewer **reports**; it does not edit.
     single-sample lower bound; matched $n{=}8$ still pending). This is the intended,
     honestly-caveated headline --- do NOT flag it as an overclaim provided the $n{=}1$
     caveat is stated. The earlier-withheld bug-era numbers should NOT reappear.
-  - The runaway figure/finding is **retained on purpose** — it is measured from how
-    rollouts terminate (scoring-independent), so it survives the eval issue.
-  - The second-dataset generalization point is an open TODO; CodeAct cells marked `†` are
-    an older implementation. Acceptable *if clearly marked*; flag any place stated as settled.
+  - The long-document "runaway" figure/finding was **removed on purpose** (its data was
+    thinking-on, inconsistent with the otherwise thinking-off paper) — do not expect it,
+    and do not flag its absence.
+  - Second-dataset generalization was **dropped** (no results forthcoming) — there should
+    be no "second dataset / in progress" claims; flag any that reappear.
+  - CodeAct cells marked `†` are an older implementation. Acceptable *if clearly marked*;
+    flag any place stated as settled.
 
 ### Project hard rules (violations are findings)
 
@@ -209,7 +212,7 @@ For every finding:
 
 ## 4. Reviewer procedure (for an agent)
 
-1. Read all of `acl_latex.tex` and `tex/*.tex`. Skim `mining/*.md` as the evidence base.
+1. Read all of `latex/acl_latex.tex` and `latex/tex/*.tex`. Skim `mining/*.md` as the evidence base.
 2. Compile or `pdftotext` the PDF to check floats, cross-references, and layout (C12, C13, C15).
 3. Go category by category (C1–C15). For each, scan the whole report — a single pass per
    category beats a single pass per section, because consistency/voice issues are global.
