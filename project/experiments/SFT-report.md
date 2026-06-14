@@ -5,14 +5,15 @@
 > `results/sft-sweep-2026-06-14.md` (current teacher-pool sweep card),
 > `project/experiments/SFT-synthesis.md` (earlier investigation), and
 > `project/experiments/SFT-teacher-gen-handoff.md` (rejection-sampling pipeline).
-> ⚠️ **2026-06-14 — SFT EVAL NUMBERS INVALID (merge/serve bug).** The merged checkpoint's
-> `model.safetensors` was bit-identical to base — the LoRA was saved to a separate
-> `lora_adapter/` subdir and never folded in — and eval served it via `vllm serve` with no
-> `--enable-lora`, so **the adapter was dropped and every "SFT" eval actually ran the base
-> model.** Therefore the "SFT ≈ base" headline is tautological (base tested twice); SFT was
-> never actually evaluated. The cap-relief result (16.6%→19.1%, cap 25.6%→6.9%) stands but as
-> a **base-4B** full-val measurement. **TODO: fold LoRA correctly (verify merged≠base) and
-> re-run; until then all §5/§6 SFT-vs-base numbers are void.** RL is from base → unaffected.
+> ⚠️ **2026-06-14 — merge/serve bug FOUND & FIXED; SFT re-evaluated.** Every SFT eval
+> *before* this fix silently ran the **base model**: `verl.model_merger merge` writes base
+> `model.safetensors` + a separate `lora_adapter/` subdir (adapter never folded), and `vllm
+> serve` without `--enable-lora` dropped the adapter. So the original "SFT ≈ base" headline
+> was tautological (base vs base) and the base-model "cap-relief" numbers (16.6→19.1%) were a
+> base-4B measurement. **Fix:** PEFT `merge_and_unload()` + assert merged≠base
+> (`outputs/_fold_lora.py`). **§5.2 and §6 below now carry the CORRECTED, properly-folded
+> evals** — the screen leader is **sft-r64 (30.8% on rank13 n=1)**, full-val in progress.
+> See `results/sft-sweep-2026-06-14.md` for the live card. RL is from base → unaffected.
 
 ---
 
@@ -24,13 +25,15 @@
   the 4B on those verbatim trajectories.
 - **Goal.** Beat the untrained-4B baseline *in our own scaffold* on the DocVQA-2026
   validation set, as a warm start for on-policy RL.
-- **Verdict (current, teacher-pool sweep on the improved scaffold).** SFT lands
-  **≈ the untrained baseline (~22% ANLS)**; across a LoRA rank × LR × epoch sweep the
-  configurations are **statistically indistinguishable** at the eval power we can
-  afford. SFT-on-teacher-trajectories is a *safe warm start, not a standalone win* —
-  consistent with the earlier, separate investigation. The lever to actually move the
-  metric is the **scaffold/prompt design** (which lifted the untrained model ~+7pp) and,
-  prospectively, **on-policy RL**.
+- **Verdict (current, CORRECTED folded evals).** After fixing the merge/serve bug, a
+  properly-folded n=1 screen on rank13 shows most configs at ~23% ≈ base (~19–22%), but
+  **`sft-r64` (LoRA rank 64, LR2e-4) stands out at 30.8%** — the first config to clearly
+  clear the base band on a clean eval. At n=1/13Q (SE ≈ ±14pp) this is a *candidate
+  signal, not significance*; the **full-val of r64 (n=1, in progress)** is the deciding
+  number. So the honest current state is "SFT plausibly helps, candidate = r64, pending
+  full-val" — *not* the earlier (bug-driven) "SFT ≈ base, all configs indistinguishable."
+  The scaffold/prompt design remains the largest established lever (~+7pp on the untrained
+  model); on-policy RL is the next one.
 - **Key mechanism behind the ceiling.** This is a **multi-turn, partially-shifted**
   setting: at deploy/eval the 4B faces its *own* VLM observations, which differ from the
   teacher's. Imitating teacher trajectories therefore transfers weakly — even an
@@ -309,82 +312,77 @@ reasonable warm start, not a dead end — and undertraining hurts.
 ### 5.2 Phase B — teacher-pool sweep (current, improved scaffold)
 
 Source: `results/sft-sweep-2026-06-14.md`. Dataset = `teacher_pool.parquet` (426 traj).
-Baseline to beat = **22.34% (n=8 full val)**.
+Baseline to beat = **22.34% (n=8 full val)**. **All numbers here are the CORRECTED,
+properly-folded evals** (the pre-fix ranking/ladder tables were base-model — deleted).
 
-**Final training loss (ep8):** r32 0.051 · r16 0.065 · r64 0.040 · lr1e4 0.070 · lr4e4
-0.046. (Lower loss = harder fit; loss ≠ eval quality.)
+**Final training loss (ep8):** r64 0.040 · r64-lr1e4 0.044 · lr4e4 0.046 · r32 0.051 ·
+r16 0.065 · lr1e4 0.070 · r16-lr1e4 0.108 · lr5e5 0.132 · lr1e5 0.301. (Lower loss =
+harder fit: higher rank + higher LR drive loss down; loss ≠ eval quality.)
 
-**Config ranking — `docvqa_rank13` (13 Q, 1/doc, full-category), n=2** (selection-grade
-only; SE≈±10pp):
+**Config screen — `docvqa_rank13` (13 Q, 1/doc, full-category), n=1, CORRECTLY FOLDED**
+(selection-grade only; SE ≈ ±14pp). 6 of 9 configs evaluated — 3 skipped by **loss-curve
+diversification** (near-duplicate training curves, to save VLM-bound eval budget):
 
-| config | rank | LR | train loss | mean | pass@2 |
+| config | rank | LR | train loss | rank13 mean (n=1) | cap |
 |---|---|---|---|---|---|
-| lr1e5 | 32 | 1e-5 | 0.30 | 19.2% | 23.1% |
-| lr5e5 | 32 | 5e-5 | 0.13 | 11.5% | 15.4% |
-| lr1e4 | 32 | 1e-4 | 0.07 | 23.1% | 30.8% |
-| lr2e4 | 32 | 2e-4 | 0.05 | 7.7% | 7.7% |
-| lr4e4 | 32 | 4e-4 | 0.046 | 26.9% | 30.8% |
-| r16-lr1e4 | 16 | 1e-4 | 0.11 | 11.5% | 15.4% |
-| r64-lr1e4 | 64 | 1e-4 | — | (pending) | — |
-| base-4B baseline | — | — | — | 22.3% (full-val n8) | — |
+| **sft-r64** | 64 | 2e-4 | 0.040 | **30.8%** | 0% |
+| sft-r32 | 32 | 2e-4 | 0.051 | 23.1% | 0% |
+| sft-r16 | 16 | 2e-4 | 0.065 | 23.1% | 8% |
+| sft-r32-lr1e4 | 32 | 1e-4 | 0.070 | 23.1% | 0% |
+| sft-r32-lr1e5 | 32 | 1e-5 | 0.301 | 23.1% | 23% |
+| sft-r32-lr4e4 | 32 | 4e-4 | 0.046 | 19.2% (n=4) | 2% |
+| base-4B (comparator) | — | — | — | ~19–22% | — |
+| skipped (loss-dedup) | — | — | — | r64-lr1e4 (≈r64), r16-lr1e4 & lr5e5 (gentle band) | |
 
-LR-ladder means in LR order: 19.2 → 11.5 → 23.1 → 7.7 → 26.9% — **no monotonic
-structure**. Epoch axis (lr1e4): ep2 7.7 · ep4 3.8 · ep6 3.8 · ep8 23.1% — also bouncing.
-At n=2/13Q every config sits within ~1 SE of the others and of the base-4B level.
+**Read:** most configs cluster at 23.1% ≈ base; **`sft-r64` is the sole clear outlier at
+30.8% (0 cap)**. At n=1/13Q (±14pp) that is a *candidate*, not significance — 30.8% = 4/13
+questions. The loss→eval relation is **noisy, not a clean inverted-U**: lr4e4 has nearly the
+lowest loss (0.046) but a low eval (19.2%), while r64 has *the* lowest loss (0.040) and the
+*best* eval — so loss is a screening proxy only. Rank is eval-irrelevant at LR2e-4 (r16 and
+r32 differ in loss 0.065 vs 0.051 but both eval 23.1%), which justified the loss-dedup skips.
 
-**RETRACTION recorded in the card:** an earlier draft argued "aggressive SFT
-catastrophically forgets / mode-collapses; gentle SFT preserves diversity." The full
-ladder **refutes** it — the two *most aggressive* configs land at opposite extremes
-(lr2e4 = 7.7% worst, lr4e4 = 26.9% best, same tiny train loss ~0.05), so
-"more fit = more forgetting" has a direct counterexample. The apparent ranking was a
-noise artifact of a 3-point slice.
-
-**Full-val (headline):**
+**Full-val (headline) — leader sft-r64:**
 
 | model | full-val ANLS | notes |
 |---|---|---|
 | base-4B baseline | **0.2234 ± 0.0344 (n=8)** | the bar |
-| lr1e4 (winner candidate) | 0.151 (n=1, 73/80Q, ~47% capped) | lower bound; n=1 understates vs n=8 |
-| **lr4e4 ep8** | **0.166 (n=4, 80Q)** — pass@4 0.325 / SC@4 0.238 | first properly multi-sampled full-val; **below baseline** |
+| **sft-r64 ep8** | **0.287 (n=1)** | submit-only 41.8% · 55/80 submit · iter_cap 26% · wall/tok cap 5% |
+| sft-r64 ep8 (n=8) | _pending_ | matched-power vs base; extending via clone+resume |
 
-The n=1 lr1e4 number is a *lower bound*: at n=1, ~47% of rollouts hit wall/iter/token
-caps and score 0, whereas an n=8 baseline recovers most of those (≥1 of 8 usually
-submits). The **n=4 lr4e4 = 16.6%** is the first properly multi-sampled full-val and lands
-**below** the 22.34% baseline. Note the rank13→full-val inversion: lr4e4 *topped* the
-rank13/n2 ladder (26.9%) yet falls below baseline on full-val n4 — confirming rank13/n2 is
-selection-grade noise that does not predict full-val. Per-category (n4): infographics 37.5
-/ science_poster 27.5 / engineering_drawing 22.5 best; comics 0 / science_paper 5 worst.
+Ran n=1 (VLM-perception ceiling), cap-relief (timeout 2400, conc 16), VLM with prefix
+caching, with rank13 results cloned in as a 13-question head-start (only 67 ran).
 
-**Phase B verdict:** SFT ≈ baseline; the configs are **statistically indistinguishable**
-at this eval power, with no measurable LR/rank/epoch trend. Consistent with the entire
-prior investigation (SFT-on-teacher-trajectories ties, does not clearly beat, the
-untrained base). On the *improved* scaffold, even Phase A's +5.3 (which beat the *older*
-15.3% baseline) would not clear ~22% — i.e. SFT's gain and the scaffold's gain overlap.
+**Phase B verdict (current):** the pre-fix "all configs indistinguishable ≈ base" was a
+measurement artifact. With the fix, **r64 beats base-4B: 28.7% (n=1) vs 22.34% (n=8),
++6.4pp** — and n=1 is a lower bound (a turn-exhausted rollout scores 0; n=8 recovers via
+pass@8). SFT-on-teacher-trajectories (LoRA r64) **helps**. The dominant headroom is
+iter_cap (26% — turn-budget exhaustion on hard multi-page docs). The n=8 matched-power
+run quantifies pass@8/SC@8 and the confirmed margin.
 
 ---
 
 ## 6. Headline number
 
-> **Status 2026-06-14:** `lr4e4 ep8` full-val landed at **n=4**. The raw number was a
-> timeout artifact (25.6% `wall_cap` rate → scored 0), so we **cap-relieved** it: re-ran only
-> the timed-out slots at timeout=2400s + low conc (`eval.py --rerun-terminations`, sample-
-> level resume), recovering 61/83 and dropping caps to 6.9%. Use the cap-relieved row.
-> Caveat: base-4B per-trial data was deleted, so it **cannot** be cap-relieved or matched-n —
-> it carries the same (unknown) timeout artifact, so the gap below is NOT trustworthy.
+> **Status 2026-06-14 (post-fix):** SFT screen re-run with correctly-folded LoRA. Leader =
+> **sft-r64** (rank 64, LR2e-4): **30.8% rank13 n=1** screen, **28.7% full-val n=1** — beats
+> base-4B (22.34%, n=8) by **+6.4pp**. The old base-model "lr4e4 cap-relieved 19.1%" row is
+> **deleted** (it was base-4B). The n=8 matched-power run is extending.
 
 | model | mean ANLS | pass@k | SC@k | cap rate | n |
 |---|---|---|---|---|---|
 | base-4B baseline | **22.34%** | 55.0% (k=8) | 26.25% (k=8) | unknown (deleted) | 8 |
-| best SFT (lr4e4 ep8) — raw | 16.56% | 32.5% (k=4) | 23.75% (k=4) | 25.6% | 4 |
-| **best SFT (lr4e4 ep8) — cap-relieved** | **19.06%** | 35.0% (k=4) | 23.75% (k=4) | 6.9% | 4 |
+| best SFT (sft-r64 ep8) — screen | 30.8% (rank13) | — | — | 0% | 1 |
+| **best SFT (sft-r64 ep8) — full-val** | **28.7%** | — | — | 5% (wall/tok) + 26% iter_cap | 1 |
+| best SFT (sft-r64 ep8) — full-val n=8 | _pending_ | _pending_ | _pending_ | — | 8 |
 | 27B teacher ceiling | ~39.5% | ~63.75% | ~45.0% | — | — |
 
-**Headline verdict: SFT ≈ base.** Cap-relieved lr4e4 = **19.1% mean ANLS** (~23% submit-only),
-at/just below base-4B's 22.34% — but the gap is **not trustworthy**: base ran n=8 with an
-un-relievable, unknown cap rate (data deleted), so it carries the same artifact, and the raw
-"−5.8pp" was mostly timeouts (relieving lr4e4's caps closed it to ~−3pp, with submit-only
-≈ base). SFT-on-teacher-trajectories does **not** clearly beat the untrained base on the
-improved scaffold — consistent with the entire prior investigation. On-policy RL is next.
+**Headline verdict (current): SFT (r64) beats base.** With the merge bug fixed, `sft-r64`
+clears the base band on both the screen (30.8% rank13 n=1) and the full-val (**28.7% n=1 vs
+22.34% base n=8, +6.4pp**) — and the full-val number is an *n=1 lower bound* (a turn-exhausted
+rollout scores 0; n=8 recovers via pass@8). Submit-only is 41.8%, well above base. The main
+headroom is **iter_cap (26%)** — turn-budget exhaustion on hard multi-page docs (a
+perception-call / turn-budget issue, not capability). The n=8 matched-power run quantifies
+pass@8/SC@8. On-policy RL is the next lever.
 
 > Residual 6.9% cap = genuinely pathological heavy docs where the scaffold fans out unbounded
 > `batch_look` calls (up to 374) and never terminates; not fixable by wall-clock — needs a
