@@ -30,10 +30,11 @@ findings. The reviewer **reports**; it does not edit.
     reinforcement learning and on-policy distillation are **future work**, and the drift
     from the proposal is explained in a footnote at the start of §5. Flag any place RL/OPD
     is described as run, or as having produced a result.
-  - The supervised-fine-tuning **accuracy numbers are withheld** pending a corrected
-    re-evaluation (an evaluation-harness error invalidated the first round). Flag any
-    specific SFT / 4B / 8B ANLS score that reappears in prose, table, or figure, and flag
-    if the withholding itself is not stated.
+  - The supervised-fine-tuning result is now reported as **preliminary**: the best
+    configuration scores 28.7 ANLS at $n{=}1$ vs the $n{=}8$ base 22.34 (a conservative
+    single-sample lower bound; matched $n{=}8$ still pending). This is the intended,
+    honestly-caveated headline --- do NOT flag it as an overclaim provided the $n{=}1$
+    caveat is stated. The earlier-withheld bug-era numbers should NOT reappear.
   - The runaway figure/finding is **retained on purpose** — it is measured from how
     rollouts terminate (scoring-independent), so it survives the eval issue.
   - The second-dataset generalization point is an open TODO; CodeAct cells marked `†` are

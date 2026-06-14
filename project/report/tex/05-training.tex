@@ -1,7 +1,7 @@
 \section{Training a Small Agent}
 \label{sec:training}
 
-The \S\ref{sec:scaffold} analysis fixes the target of weight-level training: the append-only CodeAct scaffold, whose growing-prefix trajectory is the structure gradient-based objectives are built for. We report a preliminary \emph{supervised} fine-tuning study of whether training lifts a $\leq$8B agent inside that scaffold; reinforcement learning and on-policy distillation, the natural next stages, are left to future work. We keep this section deliberately light, and defer its quantitative verdict pending a corrected evaluation.
+The \S\ref{sec:scaffold} analysis fixes the target of weight-level training: the append-only CodeAct scaffold, whose growing-prefix trajectory is the structure gradient-based objectives are built for. We report a preliminary \emph{supervised} fine-tuning study of whether training lifts a $\leq$8B agent inside that scaffold; reinforcement learning and on-policy distillation, the natural next stages, are left to future work. The result is preliminary --- reported at single-sample resolution, with a matched-power evaluation still to come.
 
 \subsection{What is trained, and how it is measured}
 
@@ -31,8 +31,23 @@ The raw corpus is dominated by one source --- MapQA alone contributes 483k of it
 \subsection{Preliminary results}
 \label{sec:prelim}
 
-We fine-tune the 4B agent on the leakage-free teacher trajectories and sweep LoRA rank and learning rate. Training is well behaved: every configuration converges smoothly (Figure~\ref{fig:loss}), with final training loss governed mainly by learning rate and only weakly by adapter rank --- the expected behavior for LoRA fine-tuning. A low training loss, however, is not by itself evidence of an agent that answers better: a small policy can memorize teacher trajectories without reproducing them under the observation shift of a fresh multi-turn rollout, where its own earlier actions, not the teacher's, determine what it sees next.
+We fine-tune the 4B agent on the leakage-free teacher trajectories and sweep LoRA rank and learning rate. Training is well behaved: every configuration converges smoothly (Figure~\ref{fig:loss}), with final loss governed mainly by learning rate and only weakly by adapter rank --- the expected behaviour for LoRA fine-tuning. Because a low training loss need not imply a better agent under the observation shift of a fresh multi-turn rollout, configurations are ranked by validation accuracy rather than by loss.
 
-The quantitative effect on validation accuracy is being finalized. An error in the evaluation harness invalidated the first round of supervised-fine-tuning scores, and a corrected re-evaluation is in progress; we therefore defer the headline accuracy comparison rather than report numbers we cannot stand behind.
+On the full validation set, the best configuration --- LoRA rank 64, eight epochs --- lifts the agent over the untrained base, from 22.34 to 28.7 ANLS (Table~\ref{tab:sft}). The gain is in extraction quality: submit-only accuracy reaches 41.8\%, well above the base, while the dominant remaining failure is the agent exhausting its turn budget before submitting on hard multi-page documents (26\% of rollouts). The comparison is conservative --- the supervised number is a single sample per question ($n{=}1$) against the base's $n{=}8$, so a lone deep rollout that runs out of budget scores zero where eight tries would usually recover one, and a matched $n{=}8$ evaluation is still running. Read with that caveat, rejection-sampling fine-tuning on teacher trajectories does lift the small agent; we report it as a preliminary result and will firm up the margin at matched sample size.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Model & ANLS & $n$ \\
+\midrule
+Qwen3.5-4B base & 22.34 $\pm$ 3.44 & 8 \\
+\quad + SFT (LoRA rank 64, 8 epochs) & \textbf{28.7} & 1 \\
+\bottomrule
+\end{tabular}
+\caption{Best supervised configuration on the full DocVQA-2026 validation set (80Q). The SFT number is a single-sample lower bound ($n{=}1$) against the $n{=}8$ base; a matched $n{=}8$ evaluation is pending.}
+\label{tab:sft}
+\end{table}
 
 \input{tex/fig-loss}

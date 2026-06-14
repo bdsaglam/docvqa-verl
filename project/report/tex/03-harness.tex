@@ -57,7 +57,7 @@ Tier & Solver & Mechanism & ANLS ($n{=}8$) \\
  & Gemini 3 Flash & --- & 33.75 (val) \\
 \bottomrule
 \end{tabular}
-\caption{Harness-design comparison on DocVQA-2026 val (80Q), $n{=}8$, frozen Qwen3.5-27B VLM, no-think. The two tiers are separated by a gap several times the within-tier standard deviation. CodeAct is the corrected append-only (chat-MDP) loop (final, $n{=}8$).}
+\caption{Harness-design comparison on DocVQA-2026 val (80Q), $n{=}8$, frozen Qwen3.5-27B VLM, no-think. The two tiers are separated by a gap several times the within-tier standard deviation. CodeAct is the corrected append-only loop (final, $n{=}8$).}
 \label{tab:harness}
 \end{table*}
 
@@ -149,4 +149,4 @@ Gemma-4-E4B & 7.34 & 6.09 & 7.66$^\dag$ \\
 
 Within the Qwen3.5 family the homogeneous ladder rises only with scale: 4B and 9B sit low (RLM 12.49 and 16.67), where reasoner and perception are jointly weak, and only the 27B clears the bar --- and the same 4B nearly doubles, to 21.09, once paired with the strong 27B VLM (Table~\ref{tab:scale}), underscoring the perception bottleneck of \S\ref{sec:mechanism}. The harness ordering then reproduces on a second model family: Gemma-4-31B shows RLM 32.50 $\gg$ ReAct 18.44 (a $+14$pp gap), mirroring Qwen3.5-27B's 39.38 $\gg$ 25.16. The small homogeneous Gemma-4-E4B is the floor control --- all three harnesses land at 6--8, within noise of the $\sim$6.25 official baseline, so at this capacity no scaffold pays off.
 
-Together the sweeps fix the gate as base capability --- reasoning, coding, and vision jointly --- not raw parameter count. A modern Qwen3.5-4B clears it (Table~\ref{tab:scale}); a same-size but weaker Gemma-4-E4B does not (Table~\ref{tab:family}); and an older Qwen3-8B fails even with strong perception, for lack of coding ability (Table~\ref{tab:scale}). The advantage appears once, and only once, the base can drive the loop. ($\dag$~older CodeAct implementation, provisional pending re-run; the 4B and 27B CodeAct cells are the corrected append-only (chat-MDP) loop, final at $n{=}8$.)
+Together the sweeps fix the gate as base capability --- reasoning, coding, and vision jointly --- not raw parameter count. A modern Qwen3.5-4B clears it (Table~\ref{tab:scale}); a same-size but weaker Gemma-4-E4B does not (Table~\ref{tab:family}); and an older Qwen3-8B fails even with strong perception, for lack of coding ability (Table~\ref{tab:scale}). The advantage appears once, and only once, the base can drive the loop. ($\dag$~older CodeAct implementation, provisional pending re-run; the 4B and 27B CodeAct cells are the corrected append-only loop, final at $n{=}8$.)

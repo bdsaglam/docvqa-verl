@@ -33,6 +33,6 @@
 \end{groupplot}
 \end{tikzpicture}%
 }
-\caption{Supervised fine-tuning loss over the LoRA hyperparameter sweep (\S\ref{sec:prelim}), 208 steps. Every configuration converges smoothly; final loss is governed mainly by learning rate (right) and only weakly by adapter rank (left), consistent with learning rate being the dominant knob for LoRA fine-tuning. A low training loss need not translate into validation gains, however; the corrected accuracy comparison is still being finalized (\S\ref{sec:prelim}).}
+\caption{Supervised fine-tuning loss over the LoRA rank and learning-rate sweep (\S\ref{sec:prelim}; representative learning rates shown), 208 steps. Every configuration converges smoothly; final loss is governed mainly by learning rate (right) and only weakly by adapter rank (left), consistent with learning rate being the dominant knob for LoRA fine-tuning. A low training loss need not translate into validation gains, so configurations are ranked by accuracy (Table~\ref{tab:sft}).}
 \label{fig:loss}
 \end{figure}
