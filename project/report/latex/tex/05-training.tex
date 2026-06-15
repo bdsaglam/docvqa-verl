@@ -1,7 +1,7 @@
 \section{Training a Small Agent}
 \label{sec:training}
 
-The \S\ref{sec:scaffold} analysis fixes the target of weight-level training: the append-only CodeAct scaffold, whose growing-prefix trajectory is the structure gradient-based objectives are built for. We report a preliminary \emph{supervised} fine-tuning study of whether training lifts a $\leq$8B agent inside that scaffold; reinforcement learning and on-policy distillation, the natural next stages, are left to future work. The result is preliminary --- reported at single-sample resolution, with a matched-power evaluation still to come.
+The \S\ref{sec:scaffold} analysis fixes the target of weight-level training: the append-only CodeAct scaffold, whose growing-prefix trajectory is the structure gradient-based objectives are built for. We report a preliminary \emph{supervised} fine-tuning study of whether training lifts a $\leq$8B agent inside that scaffold; reinforcement learning and on-policy distillation, the natural next stages, are left to future work. At matched sample size the supervised stage ties the untrained base rather than beating it --- an honest first step that locates the accuracy lever in the on-policy methods left to future work.
 
 \subsection{What is trained, and how it is measured}
 
@@ -9,7 +9,7 @@ We update only the weights of the reasoning policy --- the language model that, 
 
 The backbone is Qwen3.5-4B, a pivot from the Qwen3-8B model named in the original proposal. The 4B model is the one that holds the $\leq$8B leaderboard slot inside this agent scaffold, making it the relevant subject for a study aimed at the $\leq$8B tier; the larger, older-generation 8B model is not the incumbent, and using it would conflate a backbone change with the training intervention. Training uses verl \citep{verl} with fully-sharded data-parallel (FSDP) model sharding.
 
-Evaluation follows the \S\ref{sec:setup} protocol --- binary ANLS at threshold 0.9, native thinking disabled (the reasoner still writes its reasoning as free text around the code blocks, as explained in \S\ref{sec:setup}) --- applied to the 4B agent with $n{=}4$ independent samples per question to reduce per-rollout variance. Two scales are used: a small 13-question stratified mini-screen (covering all eight categories) for rapid checkpoint comparison during the hyperparameter sweep, and the full 80-question validation set to confirm the best configuration. A model and its baseline are compared per question on the same items, so improvements are assessed with paired statistics. Three reference points anchor the trained-model numbers: the untrained Qwen3.5-4B agent in the same CodeAct scaffold, the published $\leq$8B leaderboard entry at roughly 19 ANLS, and the 8B--35B-tier entry at roughly 37.5 (a different system from the like-valued Gemini~3~Pro frontier baseline).
+Evaluation follows the \S\ref{sec:setup} protocol --- binary ANLS at threshold 0.9, native thinking disabled (the reasoner still writes its reasoning as free text around the code blocks, as explained in \S\ref{sec:setup}) --- applied to the 4B agent with multiple independent samples per question to reduce per-rollout variance. Two scales are used: a small 13-question stratified mini-screen (covering all eight categories) at single-sample resolution for rapid checkpoint comparison during the hyperparameter sweep, and the full 80-question validation set, evaluated at the base's own $n{=}8$ sample size, to confirm the best configuration at matched power. A model and its baseline are compared per question on the same items, so improvements are assessed with paired statistics. Three reference points anchor the trained-model numbers: the untrained Qwen3.5-4B agent in the same CodeAct scaffold, the published $\leq$8B leaderboard entry at roughly 19 ANLS, and the 8B--35B-tier entry at roughly 37.5 (a different system from the like-valued Gemini~3~Pro frontier baseline).
 
 \subsection{Training signal}
 
@@ -33,20 +33,23 @@ The raw corpus is dominated by one source --- MapQA alone contributes 483k of it
 
 We fine-tune the 4B agent on the leakage-free teacher trajectories and sweep LoRA rank and learning rate. Training is well behaved: every configuration converges smoothly (Figure~\ref{fig:loss}), with final loss governed mainly by learning rate and only weakly by adapter rank --- the expected behaviour for LoRA fine-tuning. Because a low training loss need not imply a better agent under the observation shift of a fresh multi-turn rollout, configurations are ranked by validation accuracy rather than by loss.
 
-On the full validation set, the best configuration --- LoRA rank 64, eight epochs --- lifts the agent over the untrained base, from 22.34 to 28.7 ANLS (Table~\ref{tab:sft}). The gain is in extraction quality: submit-only accuracy reaches 41.8\%, well above the base, while the dominant remaining failure is the agent exhausting its turn budget before submitting on hard multi-page documents (26\% of rollouts). The comparison is conservative --- the supervised number is a single sample per question ($n{=}1$) against the base's $n{=}8$, so a lone deep rollout that runs out of budget scores zero where eight tries would usually recover one, and a matched $n{=}8$ evaluation is still running. Read with that caveat, rejection-sampling fine-tuning on teacher trajectories does lift the small agent; we report it as a preliminary result and will firm up the margin at matched sample size.
+On the full validation set, evaluated at the base's own $n{=}8$ sample size for a matched comparison, the best configuration --- LoRA rank 64, eight epochs --- scores 23.0 ANLS against the untrained base's 22.34 (Table~\ref{tab:sft}). The $+0.7$-point difference sits well within the base's $\pm 3.4$ sampling spread, so the two are tied, and the oracle and consistency measures agree: pass@8 is 53.8\% against the base's 55.0\% (tied), while self-consistency over the eight samples is in fact lower (17.5\% versus 26.25\%). An intermediate single-sample reading had suggested a larger lift (28.7 ANLS), but it rested on one favorable draw, and the eight-sample average regresses to the base. The honest verdict is a null: rejection-sampling fine-tuning on teacher trajectories does not move accuracy beyond the untrained base at the 4B scale.
+
+This is consistent with the rest of the study. Supervised imitation of teacher trajectories is off-policy, and a fresh multi-turn rollout drifts from the demonstrated observations, so imitating trajectories does not transfer to the agent's own deployment distribution --- even an in-domain set memorized to near-zero training loss only ties the untrained base. The remaining headroom is not extraction quality but completion: roughly 30\% of rollouts exhaust their turn budget before submitting on hard multi-page documents, an efficiency failure that an on-policy reward, rather than off-policy imitation, is positioned to address. Supervised fine-tuning is therefore best read as a safe warm-start that places the model on the scaffold's turn structure, with the accuracy lever lying in the on-policy methods left to future work.
 
 \begin{table}[t]
 \centering
 \small
-\begin{tabular}{lcc}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
 \toprule
-Model & ANLS & $n$ \\
+Model & ANLS & pass@8 & SC@8 \\
 \midrule
-Qwen3.5-4B base & 22.34 $\pm$ 3.44 & 8 \\
-\quad + SFT (LoRA rank 64, 8 epochs) & \textbf{28.7} & 1 \\
+Qwen3.5-4B base & 22.34 $\pm$ 3.44 & 55.0 & 26.25 \\
+\quad + SFT (rank 64, 8 ep.) & 23.0 & 53.8 & 17.5 \\
 \bottomrule
 \end{tabular}
-\caption{Best supervised configuration on the full DocVQA-2026 validation set (80Q). The SFT number is a single-sample lower bound ($n{=}1$) against the $n{=}8$ base; a matched $n{=}8$ evaluation is pending.}
+\caption{Best supervised configuration on the full DocVQA-2026 validation set (80Q), at matched $n{=}8$. The $+0.7$-point ANLS difference is within the base's $\pm 3.4$ sampling spread (a tie); pass@8 is tied and self-consistency (SC@8) is lower. Supervised fine-tuning does not beat the untrained base at matched power.}
 \label{tab:sft}
 \end{table}
 
