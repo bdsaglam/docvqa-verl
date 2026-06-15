@@ -379,6 +379,13 @@ class SubprocessInterpreter:
         while True:
             result = self._recv()
 
+            # Defensive: a non-dict line is stray stdout that leaked onto the IPC pipe
+            # (e.g. a bare float that escaped the print-capture redirect). It is NOT a
+            # protocol message — skip it and read the next line rather than crash on
+            # `.get()`. A single leaked line must never kill a multi-hour RL run.
+            if not isinstance(result, dict):
+                continue
+
             # Handle tool call requests
             if result.get("type") == "tool_call":
                 self._handle_tool_call(result)
