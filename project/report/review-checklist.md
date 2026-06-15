@@ -23,7 +23,7 @@ findings. The reviewer **reports**; it does not edit.
   frontier-model scores, literature claims) the reviewer usually **cannot** verify the
   ground truth — flag these `VERIFY` rather than asserting them wrong.
 - **Source of truth = the LaTeX**, not `draft.md` (which is a stale Markdown concat).
-  Read `project/report/latex/acl_latex.tex` + `project/report/latex/tex/*.tex` (with `references.bib`, `acl.sty`, `figs/` alongside). Use
+  Read `project/report/latex/report.tex` + `project/report/latex/tex/*.tex` (with `references.bib`, `acl.sty`, `figs/` alongside). Use
   `pdftotext`/the compiled PDF for float, cross-reference, and layout checks.
 - **Known-provisional / scoped-out items (do NOT flag as errors; DO flag if mis-stated):**
   - Part 2 (training) is **intentionally narrowed to a preliminary supervised study**;
@@ -212,7 +212,7 @@ For every finding:
 
 ## 4. Reviewer procedure (for an agent)
 
-1. Read all of `latex/acl_latex.tex` and `latex/tex/*.tex`. Skim `mining/*.md` as the evidence base.
+1. Read all of `latex/report.tex` and `latex/tex/*.tex`. Skim `mining/*.md` as the evidence base.
 2. Compile or `pdftotext` the PDF to check floats, cross-references, and layout (C12, C13, C15).
 3. Go category by category (C1–C15). For each, scan the whole report — a single pass per
    category beats a single pass per section, because consistency/voice issues are global.
