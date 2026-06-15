@@ -33,7 +33,7 @@ The raw corpus is dominated by one source --- MapQA alone contributes 483k of it
 
 We fine-tune the 4B agent on the leakage-free teacher trajectories and sweep LoRA rank and learning rate. Training is well behaved: every configuration converges smoothly (Figure~\ref{fig:loss}), with final loss governed mainly by learning rate and only weakly by adapter rank --- the expected behaviour for LoRA fine-tuning. Because a low training loss need not imply a better agent under the observation shift of a fresh multi-turn rollout, configurations are ranked by validation accuracy rather than by loss.
 
-On the full validation set, evaluated at the base's own $n{=}8$ sample size for a matched comparison, the best configuration --- LoRA rank 64, eight epochs --- scores 23.0 ANLS against the untrained base's 22.34 (Table~\ref{tab:sft}). The $+0.7$-point difference sits well within the base's $\pm 3.4$ sampling spread, so the two are tied, and the oracle and consistency measures agree: pass@8 is 53.8\% against the base's 55.0\% (tied), while self-consistency over the eight samples is in fact lower (17.5\% versus 26.25\%). An intermediate single-sample reading had suggested a larger lift (28.7 ANLS), but it rested on one favorable draw, and the eight-sample average regresses to the base. The honest verdict is a null: rejection-sampling fine-tuning on teacher trajectories does not move accuracy beyond the untrained base at the 4B scale.
+On the full validation set, evaluated at the base's own $n{=}8$ sample size for a matched comparison, the best configuration --- LoRA rank 64, eight epochs --- scores 23.0 ANLS against the untrained base's 22.34 (Table~\ref{tab:sft}). The $+0.7$-point difference is small against the run-to-run spread of either model across the eight single-sample passes ($\pm 3.44$ for the base, $\pm 4.00$ for the fine-tuned agent), so the two are tied, and the oracle and consistency measures agree: pass@8 is 53.8\% against the base's 55.0\% (tied), while self-consistency over the eight samples is in fact lower (17.5\% versus 26.25\%). An intermediate single-sample reading had suggested a larger lift (28.7 ANLS), but it rested on one favorable draw, and the eight-sample average regresses to the base. The honest verdict is a null: rejection-sampling fine-tuning on teacher trajectories does not move accuracy beyond the untrained base at the 4B scale.
 
 This is consistent with the rest of the study. Supervised imitation of teacher trajectories is off-policy, and a fresh multi-turn rollout drifts from the demonstrated observations, so imitating trajectories does not transfer to the agent's own deployment distribution --- even an in-domain set memorized to near-zero training loss only ties the untrained base. The remaining headroom is not extraction quality but completion: roughly 30\% of rollouts exhaust their turn budget before submitting on hard multi-page documents, an efficiency failure that an on-policy reward, rather than off-policy imitation, is positioned to address. Supervised fine-tuning is therefore best read as a safe warm-start that places the model on the scaffold's turn structure, with the accuracy lever lying in the on-policy methods left to future work.
 
@@ -46,10 +46,10 @@ This is consistent with the rest of the study. Supervised imitation of teacher t
 Model & ANLS & pass@8 & SC@8 \\
 \midrule
 Qwen3.5-4B base & 22.34 $\pm$ 3.44 & 55.0 & 26.25 \\
-\quad + SFT (rank 64, 8 ep.) & 23.0 & 53.8 & 17.5 \\
+\quad + SFT (rank 64, 8 ep.) & 23.0 $\pm$ 4.00 & 53.8 & 17.5 \\
 \bottomrule
 \end{tabular}
-\caption{Best supervised configuration on the full DocVQA-2026 validation set (80Q), at matched $n{=}8$. The $+0.7$-point ANLS difference is within the base's $\pm 3.4$ sampling spread (a tie); pass@8 is tied and self-consistency (SC@8) is lower. Supervised fine-tuning does not beat the untrained base at matched power.}
+\caption{Best supervised configuration on the full DocVQA-2026 validation set (80Q), at matched $n{=}8$. The $\pm$ figures are the population standard deviation across the eight single-sample passes; the $+0.7$-point ANLS difference is well within either spread (a tie), pass@8 is tied, and self-consistency (SC@8) is lower. Supervised fine-tuning does not beat the untrained base at matched power.}
 \label{tab:sft}
 \end{table}
 
