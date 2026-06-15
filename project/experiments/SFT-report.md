@@ -11,9 +11,10 @@
 > serve` without `--enable-lora` dropped the adapter. So the original "SFT ≈ base" headline
 > was tautological (base vs base) and the base-model "cap-relief" numbers (16.6→19.1%) were a
 > base-4B measurement. **Fix:** PEFT `merge_and_unload()` + assert merged≠base
-> (`outputs/_fold_lora.py`). **§5.2 and §6 below now carry the CORRECTED, properly-folded
-> evals** — the screen leader is **sft-r64 (30.8% on rank13 n=1)**, full-val in progress.
-> See `results/sft-sweep-2026-06-14.md` for the live card. RL is from base → unaffected.
+> (`outputs/_fold_lora.py`). **§5.2 and §6 carry the CORRECTED, properly-folded evals.**
+> **FINAL matched-power result: SFT (sft-r64) TIES base — 23.0% avg@8 vs 22.34% (n=8),
+> +0.7pp within noise; worse on SC@8.** (An intermediate n=1 "+6.4pp" was a favorable-draw
+> artifact, retracted.) See `results/sft-sweep-2026-06-14.md`. RL is from base → unaffected.
 
 ---
 
@@ -25,15 +26,15 @@
   the 4B on those verbatim trajectories.
 - **Goal.** Beat the untrained-4B baseline *in our own scaffold* on the DocVQA-2026
   validation set, as a warm start for on-policy RL.
-- **Verdict (current, CORRECTED folded evals).** After fixing the merge/serve bug, a
-  properly-folded n=1 screen on rank13 shows most configs at ~23% ≈ base (~19–22%), but
-  **`sft-r64` (LoRA rank 64, LR2e-4) stands out at 30.8%** — the first config to clearly
-  clear the base band on a clean eval. At n=1/13Q (SE ≈ ±14pp) this is a *candidate
-  signal, not significance*; the **full-val of r64 (n=1, in progress)** is the deciding
-  number. So the honest current state is "SFT plausibly helps, candidate = r64, pending
-  full-val" — *not* the earlier (bug-driven) "SFT ≈ base, all configs indistinguishable."
-  The scaffold/prompt design remains the largest established lever (~+7pp on the untrained
-  model); on-policy RL is the next one.
+- **Verdict (FINAL, corrected folded evals, matched n=8).** After fixing the merge/serve
+  bug, the properly-folded best config (`sft-r64`, rank 64, LR2e-4) at **matched n=8 ties
+  the base**: 23.0% avg@8 vs 22.34% (+0.7pp, within ±3.4pp), pass@8 53.8% ≈ 55.0%, and
+  **SC@8 17.5% < 26.25% (worse)**. An intermediate n=1 read (28.7%, "+6.4pp") was a
+  favorable-draw artifact (n=1 sampled only the cleaner sample_idx=0) — retracted. So
+  SFT-on-teacher-trajectories **ties base and loses self-consistency; it is a safe
+  warm-start, not a standalone win** — confirming the prior investigation with a correctly-
+  folded checkpoint. The scaffold/prompt design remains the largest established lever
+  (~+7pp on the untrained model); on-policy RL is the next one.
 - **Key mechanism behind the ceiling.** This is a **multi-turn, partially-shifted**
   setting: at deploy/eval the 4B faces its *own* VLM observations, which differ from the
   teacher's. Imitating teacher trajectories therefore transfers weakly — even an
@@ -346,43 +347,42 @@ r32 differ in loss 0.065 vs 0.051 but both eval 23.1%), which justified the loss
 | model | full-val ANLS | notes |
 |---|---|---|
 | base-4B baseline | **0.2234 ± 0.0344 (n=8)** | the bar |
-| **sft-r64 ep8** | **0.287 (n=1)** | submit-only 41.8% · 55/80 submit · iter_cap 26% · wall/tok cap 5% |
-| sft-r64 ep8 (n=8) | _pending_ | matched-power vs base; extending via clone+resume |
+| sft-r64 ep8 (n=1) | 0.287 | favorable single draw (sample_idx=0); retracted as the headline |
+| **sft-r64 ep8 (n=8, matched)** | **0.230** | pass@8 53.8% · SC@8 17.5% · submit-only 34.9% · iter_cap 30% |
 
-Ran n=1 (VLM-perception ceiling), cap-relief (timeout 2400, conc 16), VLM with prefix
-caching, with rank13 results cloned in as a 13-question head-start (only 67 ran).
-
-**Phase B verdict (current):** the pre-fix "all configs indistinguishable ≈ base" was a
-measurement artifact. With the fix, **r64 beats base-4B: 28.7% (n=1) vs 22.34% (n=8),
-+6.4pp** — and n=1 is a lower bound (a turn-exhausted rollout scores 0; n=8 recovers via
-pass@8). SFT-on-teacher-trajectories (LoRA r64) **helps**. The dominant headroom is
-iter_cap (26% — turn-budget exhaustion on hard multi-page docs). The n=8 matched-power
-run quantifies pass@8/SC@8 and the confirmed margin.
+**Phase B verdict (final):** the pre-fix "≈ base" was a measurement bug (base-vs-base); the
+fix is in, but the corrected **matched-power** answer is **still a tie**: r64 = **23.0% avg@8
+vs base 22.34%** (+0.7pp, within ±3.4pp), **pass@8 53.8% ≈ 55.0%**, **SC@8 17.5% < 26.25%
+(worse)**. The intermediate n=1 "+6.4pp" (28.7%) was a favorable-draw artifact — n=1 used only
+sample_idx=0 (26% iter_cap); the 8-sample average regresses to base (30% iter_cap). So
+**SFT-on-teacher-trajectories ties base at matched power and loses self-consistency** — it does
+not beat the untrained 4B. Consistent with the entire prior investigation, now confirmed with a
+correctly-folded checkpoint. On-policy RL is the lever.
 
 ---
 
 ## 6. Headline number
 
-> **Status 2026-06-14 (post-fix):** SFT screen re-run with correctly-folded LoRA. Leader =
-> **sft-r64** (rank 64, LR2e-4): **30.8% rank13 n=1** screen, **28.7% full-val n=1** — beats
-> base-4B (22.34%, n=8) by **+6.4pp**. The old base-model "lr4e4 cap-relieved 19.1%" row is
-> **deleted** (it was base-4B). The n=8 matched-power run is extending.
+> **Status 2026-06-15 (matched-power, FINAL):** With the merge bug fixed, the corrected
+> **matched n=8** answer is **SFT ≈ base, a tie** — `sft-r64` = **23.0% avg@8 vs base 22.34%**
+> (+0.7pp, within ±3.4pp). The intermediate n=1 "28.7% / +6.4pp" was a favorable-draw artifact
+> (retracted). The old base-model "lr4e4 19.1%" row was deleted (it was base-4B).
 
 | model | mean ANLS | pass@k | SC@k | cap rate | n |
 |---|---|---|---|---|---|
 | base-4B baseline | **22.34%** | 55.0% (k=8) | 26.25% (k=8) | unknown (deleted) | 8 |
-| best SFT (sft-r64 ep8) — screen | 30.8% (rank13) | — | — | 0% | 1 |
-| **best SFT (sft-r64 ep8) — full-val** | **28.7%** | — | — | 5% (wall/tok) + 26% iter_cap | 1 |
-| best SFT (sft-r64 ep8) — full-val n=8 | _pending_ | _pending_ | _pending_ | — | 8 |
+| sft-r64 ep8 — screen (rank13) | 30.8% | — | — | 0% | 1 |
+| sft-r64 ep8 — full-val (n=1, favorable draw, retracted) | 28.7% | — | — | 5%+26% iter | 1 |
+| **sft-r64 ep8 — full-val (n=8, matched)** | **23.0%** | **53.8%** | **17.5%** | 3.9%+30% iter | 8 |
 | 27B teacher ceiling | ~39.5% | ~63.75% | ~45.0% | — | — |
 
-**Headline verdict (current): SFT (r64) beats base.** With the merge bug fixed, `sft-r64`
-clears the base band on both the screen (30.8% rank13 n=1) and the full-val (**28.7% n=1 vs
-22.34% base n=8, +6.4pp**) — and the full-val number is an *n=1 lower bound* (a turn-exhausted
-rollout scores 0; n=8 recovers via pass@8). Submit-only is 41.8%, well above base. The main
-headroom is **iter_cap (26%)** — turn-budget exhaustion on hard multi-page docs (a
-perception-call / turn-budget issue, not capability). The n=8 matched-power run quantifies
-pass@8/SC@8. On-policy RL is the next lever.
+**Headline verdict (FINAL): SFT (r64) ties base at matched power; does not beat it.** At n=8,
+avg 23.0% vs 22.34% (+0.7pp, within noise) and pass@8 53.8% vs 55.0% (tied), while **SC@8
+17.5% < 26.25% (worse)** — SFT-on-teacher-trajectories ties the mean and *loses self-
+consistency*. The n=1 "+6.4pp" was an unmatched-n / favorable-draw artifact (n=1 sampled only
+the cleaner sample_idx=0). Net: SFT is a safe warm-start, **not a standalone win** — confirming
+the entire prior investigation with a correctly-folded checkpoint. Headroom = iter_cap (30%,
+turn-budget exhaustion). **On-policy RL (GRPO from base) is the lever, launching next.**
 
 > Residual 6.9% cap = genuinely pathological heavy docs where the scaffold fans out unbounded
 > `batch_look` calls (up to 374) and never terminates; not fixable by wall-clock — needs a
