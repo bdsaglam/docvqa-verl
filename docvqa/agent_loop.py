@@ -61,6 +61,12 @@ _DEFAULTS: dict[str, Any] = {
     "max_response_tokens_per_turn": 4096,
     "max_obs_chars": 8000,
     "subprocess_timeout_s": 120.0,
+    # Hard per-rollout wall-clock cap (seconds). A rollout exceeding this is terminated as
+    # "wall_cap" (scored 0) so a single hung rollout can't wedge the whole training step.
+    # The RL agent loop has only per-CALL timeouts (httpx/sandbox); this is the missing
+    # total cap that the eval path gets via --rollout-timeout. Hangs ran ~36min+; legit
+    # heavy multi-page rollouts finish well under this.
+    "rollout_wall_cap_s": 900.0,
     "parse_error_strikes_to_terminate": 3,
     # Select the FIRST python fence per turn (the model's real intended action) instead of
     # the last. Default True everywhere (eval/collection/RL): if the model hallucinates a
@@ -251,7 +257,15 @@ class DocVQAReplAgentLoop(AgentLoopBase):
             )
             interp.start()
 
+            rollout_deadline = wall_start + self._knobs["rollout_wall_cap_s"]
             for turn in range(1, max_iter + 1):
+                # Hard per-rollout wall-clock cap: if we've blown the budget (e.g. a prior
+                # turn ran long), stop here as wall_cap rather than starting another turn.
+                # The in-turn awaits below are also wait_for-bounded to the remaining budget
+                # so a hang INSIDE a turn can't wedge the step (the real failure mode).
+                if time.monotonic() > rollout_deadline:
+                    termination = "wall_cap"
+                    break
                 num_turns += 1
 
                 # <|im_end|> always; the role-play markers only when extra_obs_stops is set
@@ -261,16 +275,24 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                 if self._knobs["extra_obs_stops"]:
                     stops += ["\nuser\n", "\n## Turn", "\n## Output"]
                 t0 = time.monotonic()
-                token_out = await self.server_manager.generate(
-                    request_id=request_id,
-                    prompt_ids=prompt_ids + response_ids,
-                    sampling_params={
-                        **sampling_params,
-                        "max_tokens": self._knobs["max_response_tokens_per_turn"],
-                        "stop": stops,
-                    },
-                )
-                timings["t_gen_s"] += time.monotonic() - t0
+                try:
+                    token_out = await asyncio.wait_for(
+                        self.server_manager.generate(
+                            request_id=request_id,
+                            prompt_ids=prompt_ids + response_ids,
+                            sampling_params={
+                                **sampling_params,
+                                "max_tokens": self._knobs["max_response_tokens_per_turn"],
+                                "stop": stops,
+                            },
+                        ),
+                        timeout=max(1.0, rollout_deadline - time.monotonic()),
+                    )
+                except asyncio.TimeoutError:
+                    termination = "wall_cap"
+                    break
+                finally:
+                    timings["t_gen_s"] += time.monotonic() - t0
                 assistant_ids = list(token_out.token_ids)
                 gen_tokens += len(assistant_ids)
                 response_ids += assistant_ids
@@ -329,11 +351,20 @@ class DocVQAReplAgentLoop(AgentLoopBase):
                     parse_error_strikes = 0
                     t0 = time.monotonic()
                     try:
-                        result = await self.loop.run_in_executor(
-                            None,
-                            interp.execute,
-                            code,
+                        result = await asyncio.wait_for(
+                            self.loop.run_in_executor(
+                                None,
+                                interp.execute,
+                                code,
+                            ),
+                            timeout=max(1.0, rollout_deadline - time.monotonic()),
                         )
+                    except asyncio.TimeoutError:
+                        # Sandbox/IPC hang (the observed wedge: GPU+VLM idle). Terminate the
+                        # rollout as wall_cap; the finally below + interp.shutdown() reap the
+                        # stuck subprocess so it can't hold the step. break -> output builder.
+                        termination = "wall_cap"
+                        break
                     except (CodeInterpreterError, SyntaxError) as e:
                         result = f"[Error] {e}"
                     finally:
